@@ -1,0 +1,101 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect an IMAP account",
+        "data": {
+          "imap_server": "IMAP server",
+          "imap_port": "Port",
+          "imap_ssl": "Use SSL",
+          "username": "Username (email address)",
+          "password": "Password (app password)",
+          "folder": "Folder/label to scan"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate IMAP",
+        "description": "Enter a new app password for the existing IMAP account.",
+        "data": { "password": "New password (app password)" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check the username and app password.",
+      "cannot_connect": "Could not connect to the IMAP server.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "The new IMAP password was saved."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "add_simple_carrier": "Add carrier (simple)",
+          "add_carrier": "Add carrier (advanced)",
+          "edit_carrier": "Edit carrier",
+          "remove_carrier": "Remove carrier",
+          "scan_interval": "Change scan settings",
+          "finish": "Finish"
+        }
+      },
+      "add_simple_carrier": {
+        "title": "Add carrier (simple)",
+        "description": "The sender address is matched exactly; status text must occur in the subject or message body.",
+        "data": {
+          "name": "Carrier name",
+          "email_address": "Exact sender address",
+          "delivering_title": "Title text for out for delivery/today",
+          "delivered_title": "Title text for delivered (optional)",
+          "missed_title": "Title text for missed delivery (optional)"
+        }
+      },
+      "add_carrier": {
+        "title": "Add a carrier",
+        "data": {
+          "name": "Name (for example PostNL)",
+          "senders": "Sender addresses, one per line",
+          "delivering_subjects": "Out-for-delivery patterns, one per line",
+          "delivered_subjects": "Delivered patterns, one per line",
+          "missed_subjects": "Missed-delivery patterns, one per line"
+        }
+      },
+      "edit_carrier": {
+        "title": "Choose a carrier to edit",
+        "data": { "carrier_id": "Carrier" }
+      },
+      "edit_carrier_form": {
+        "title": "Edit {carrier_name}",
+        "data": {
+          "senders": "Sender addresses, one per line",
+          "delivering_subjects": "Out-for-delivery patterns, one per line",
+          "delivered_subjects": "Delivered patterns, one per line",
+          "missed_subjects": "Missed-delivery patterns, one per line"
+        }
+      },
+      "remove_carrier": {
+        "title": "Choose a carrier to remove",
+        "data": { "carrier_id": "Carrier" }
+      },
+      "scan_interval": {
+        "title": "Scan settings",
+        "data": {
+          "scan_interval": "Interval in seconds (60–3600)",
+          "imap_timeout": "IMAP timeout in seconds (10–120)",
+          "scan_window_days": "Days to search (1–14)"
+          ,"confirmation_enabled": "Enable daily receipt confirmation"
+          ,"confirmation_time": "Receipt confirmation time (HH:MM:SS)"
+          ,"notify_service": "Phone notification service"
+        }
+      }
+    },
+    "error": {
+      "already_exists": "A carrier with this name already exists.",
+      "invalid_name": "Enter a valid name."
+    },
+    "abort": {
+      "no_carriers": "No carriers have been configured yet."
+    }
+  }
+}

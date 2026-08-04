@@ -1,0 +1,21 @@
+confirm_received:
+  name: Bevestig alle pakketten ontvangen
+  description: Verbergt alle huidige pakketten en voorkomt herdetectie vanuit oude mails.
+  fields:
+    entry_id:
+      name: Configuratie-entry
+      description: Optioneel entry-ID; leeg bevestigt alle Pakket Tracker-accounts.
+      required: false
+      selector:
+        text:
+
+keep_parcels:
+  name: Open pakketten behouden
+  description: Laat alle huidige pakketten ongewijzigd zichtbaar.
+  fields:
+    entry_id:
+      name: Configuratie-entry
+      description: Optioneel entry-ID.
+      required: false
+      selector:
+        text:

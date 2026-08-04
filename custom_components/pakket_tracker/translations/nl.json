@@ -1,0 +1,101 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "IMAP-account koppelen",
+        "data": {
+          "imap_server": "IMAP-server",
+          "imap_port": "Poort",
+          "imap_ssl": "SSL gebruiken",
+          "username": "Gebruikersnaam (e-mailadres)",
+          "password": "Wachtwoord (app-wachtwoord)",
+          "folder": "Map/label om te scannen"
+        }
+      },
+      "reauth_confirm": {
+        "title": "IMAP opnieuw authenticeren",
+        "description": "Voer een nieuw app-wachtwoord in voor het bestaande IMAP-account.",
+        "data": { "password": "Nieuw wachtwoord (app-wachtwoord)" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Inloggen mislukt. Controleer gebruikersnaam en (app-)wachtwoord.",
+      "cannot_connect": "Kan geen verbinding maken met de IMAP-server.",
+      "unknown": "Onverwachte fout."
+    },
+    "abort": {
+      "already_configured": "Dit account is al geconfigureerd.",
+      "reauth_successful": "Het nieuwe IMAP-wachtwoord is opgeslagen."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "add_simple_carrier": "Vervoerder eenvoudig toevoegen",
+          "add_carrier": "Vervoerder toevoegen",
+          "edit_carrier": "Vervoerder bewerken",
+          "remove_carrier": "Vervoerder verwijderen",
+          "scan_interval": "Scaninstellingen aanpassen",
+          "finish": "Klaar"
+        }
+      },
+      "add_simple_carrier": {
+        "title": "Vervoerder eenvoudig toevoegen",
+        "description": "Het afzenderadres wordt exact gecontroleerd; de statustekst moet in onderwerp of bericht staan.",
+        "data": {
+          "name": "Naam vervoerder",
+          "email_address": "Exact afzenderadres",
+          "delivering_title": "Titeltekst voor onderweg/vandaag",
+          "delivered_title": "Titeltekst voor bezorgd (optioneel)",
+          "missed_title": "Titeltekst voor gemist (optioneel)"
+        }
+      },
+      "add_carrier": {
+        "title": "Nieuwe vervoerder toevoegen",
+        "data": {
+          "name": "Naam (bv. PostNL)",
+          "senders": "Afzenderadres(sen), één per regel",
+          "delivering_subjects": "Onderwerp-patronen 'onderweg', één per regel",
+          "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
+          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel"
+        }
+      },
+      "edit_carrier": {
+        "title": "Kies een vervoerder om te bewerken",
+        "data": { "carrier_id": "Vervoerder" }
+      },
+      "edit_carrier_form": {
+        "title": "{carrier_name} bewerken",
+        "data": {
+          "senders": "Afzenderadres(sen), één per regel",
+          "delivering_subjects": "Onderwerp-patronen 'onderweg', één per regel",
+          "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
+          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel"
+        }
+      },
+      "remove_carrier": {
+        "title": "Kies een vervoerder om te verwijderen",
+        "data": { "carrier_id": "Vervoerder" }
+      },
+      "scan_interval": {
+        "title": "Scaninstellingen",
+        "data": {
+          "scan_interval": "Interval in seconden (60–3600)",
+          "imap_timeout": "IMAP-time-out in seconden (10–120)",
+          "scan_window_days": "Aantal dagen terugzoeken (1–14)"
+          ,"confirmation_enabled": "Dagelijkse ontvangstbevestiging inschakelen"
+          ,"confirmation_time": "Tijdstip ontvangstbevestiging (HH:MM:SS)"
+          ,"notify_service": "Notify-service voor de telefoon"
+        }
+      }
+    },
+    "error": {
+      "already_exists": "Er bestaat al een vervoerder met deze naam.",
+      "invalid_name": "Vul een geldige naam in."
+    },
+    "abort": {
+      "no_carriers": "Er zijn nog geen vervoerders geconfigureerd."
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "pakket_tracker",
+  "name": "Pakket Tracker NL",
+  "codeowners": ["@Dennisd80"],
+  "config_flow": true,
+  "documentation": "https://github.com/Dennisd80/ha-pakket-tracker",
+  "iot_class": "cloud_polling",
+  "integration_type": "service",
+  "issue_tracker": "https://github.com/Dennisd80/ha-pakket-tracker/issues",
+  "requirements": [],
+  "version": "0.3.0"
+}

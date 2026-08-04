@@ -1,0 +1,45 @@
+name: Bug melden
+description: Meld een reproduceerbaar probleem met Pakket Tracker NL
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Deel geen wachtwoorden, tokens, volledige mails, trackingcodes,
+        privé-adressen of bestanden uit `.storage`.
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant-versie
+      placeholder: "2026.8.0"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Versie Pakket Tracker NL
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Probleem
+      description: Wat gebeurde er en wat verwachtte je?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Stappen om te reproduceren
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Geanonimiseerde logregels
+      render: text
+    validations:
+      required: false
