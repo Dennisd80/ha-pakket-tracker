@@ -5,6 +5,8 @@ samenbrengt in één pakketoverzicht. De integratie is gericht op Nederlandse
 vervoerders, maar eigen vervoerders en mailpatronen kunnen via de interface
 worden toegevoegd.
 
+Vereist Home Assistant 2025.1 of nieuwer.
+
 ## Mogelijkheden
 
 - Ingebouwde regels voor PostNL, DHL Parcel NL, DPD NL, GLS NL en Amazon.nl.

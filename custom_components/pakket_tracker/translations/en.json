@@ -85,14 +85,15 @@
           "imap_timeout": "IMAP timeout in seconds (10–120)",
           "scan_window_days": "Days to search (1–14)"
           ,"confirmation_enabled": "Enable daily receipt confirmation"
-          ,"confirmation_time": "Receipt confirmation time (HH:MM:SS)"
+          ,"confirmation_time": "Receipt confirmation time (HH:MM or HH:MM:SS)"
           ,"notify_service": "Phone notification service"
         }
       }
     },
     "error": {
       "already_exists": "A carrier with this name already exists.",
-      "invalid_name": "Enter a valid name."
+      "invalid_name": "Enter a valid name.",
+      "invalid_notify_service": "Use a service such as notify.mobile_app_my_phone or leave this field empty."
     },
     "abort": {
       "no_carriers": "No carriers have been configured yet."

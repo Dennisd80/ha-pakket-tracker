@@ -74,7 +74,14 @@ class PakketTrackerSensor(CoordinatorEntity, RestoreSensor):
 
     _attr_native_unit_of_measurement = "package(s)"
 
-    def __init__(self, coordinator, entry: ConfigEntry, carrier_id: str, carrier_name: str, stat: str) -> None:
+    def __init__(
+        self,
+        coordinator,
+        entry: ConfigEntry,
+        carrier_id: str,
+        carrier_name: str,
+        stat: str,
+    ) -> None:
         super().__init__(coordinator)
         self._entry_id = entry.entry_id
         self._username = entry.data.get(CONF_USERNAME, "")
@@ -115,7 +122,11 @@ class PakketTrackerSensor(CoordinatorEntity, RestoreSensor):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry_id)},
-            "name": f"Pakket Tracker ({self._username})" if self._username else "Pakket Tracker NL",
+            "name": (
+                f"Pakket Tracker ({self._username})"
+                if self._username
+                else "Pakket Tracker NL"
+            ),
             "manufacturer": "Pakket Tracker Community",
             "model": "IMAP Pakket Monitor",
             "sw_version": VERSION,

@@ -11,7 +11,7 @@ confirm_received:
 
 keep_parcels:
   name: Open pakketten behouden
-  description: Laat alle huidige pakketten ongewijzigd zichtbaar.
+  description: Bewuste no-op; laat alle huidige pakketten ongewijzigd zichtbaar.
   fields:
     entry_id:
       name: Configuratie-entry

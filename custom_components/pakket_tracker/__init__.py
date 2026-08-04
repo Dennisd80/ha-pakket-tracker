@@ -20,6 +20,21 @@ from .coordinator import PakketTrackerCoordinator
 PLATFORMS: list[str] = ["sensor"]
 
 
+def _parse_confirmation_time(value: str) -> tuple[int, int, int]:
+    """Parseer HH:MM of HH:MM:SS zonder een geldige tijd te verschuiven."""
+    parts = [int(part) for part in value.split(":")]
+    if len(parts) == 2:
+        parts.append(0)
+    if (
+        len(parts) != 3
+        or not 0 <= parts[0] <= 23
+        or not 0 <= parts[1] <= 59
+        or not 0 <= parts[2] <= 59
+    ):
+        raise ValueError("Ongeldige bevestigingstijd")
+    return parts[0], parts[1], parts[2]
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Registreer centrale acties voor alle Pakket Tracker-accounts."""
     hass.data.setdefault(DOMAIN, {})
@@ -60,9 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_CONFIRMATION_TIME, DEFAULT_CONFIRMATION_TIME
     )
     try:
-        hour, minute, second = (
-            int(part) for part in confirmation_time.split(":", maxsplit=2)
-        )
+        hour, minute, second = _parse_confirmation_time(confirmation_time)
     except (AttributeError, TypeError, ValueError):
         hour, minute, second = 22, 0, 0
 

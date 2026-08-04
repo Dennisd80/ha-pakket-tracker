@@ -6,13 +6,13 @@
 """
 from __future__ import annotations
 
-from copy import deepcopy
 import imaplib
 import logging
+import re
+from copy import deepcopy
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
@@ -31,17 +31,17 @@ from .const import (
     CONF_IMAP_SERVER,
     CONF_IMAP_SSL,
     CONF_IMAP_TIMEOUT,
-    CONF_PASSWORD,
     CONF_NOTIFY_SERVICE,
+    CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_WINDOW_DAYS,
     CONF_USERNAME,
-    DEFAULT_FOLDER,
     DEFAULT_CONFIRMATION_ENABLED,
     DEFAULT_CONFIRMATION_TIME,
+    DEFAULT_FOLDER,
     DEFAULT_IMAP_TIMEOUT,
-    DEFAULT_PORT,
     DEFAULT_NOTIFY_SERVICE,
+    DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SCAN_WINDOW_DAYS,
     DOMAIN,
@@ -199,47 +199,57 @@ class PakketTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> PakketTrackerOptionsFlow:
-        return PakketTrackerOptionsFlow(config_entry)
+        return PakketTrackerOptionsFlow()
 
 
 class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
     """Vervoerders beheren: toevoegen, bewerken, verwijderen."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._entry = config_entry
-        self._carriers: dict[str, dict] = {
-            cid: dict(rule)
-            for cid, rule in config_entry.options.get(CONF_CARRIERS, {}).items()
-        }
+    def __init__(self) -> None:
+        self._carriers: dict[str, dict] = {}
+        self._options_loaded = False
         self._selected_carrier_id: str | None = None
 
+    def _ensure_options_loaded(self) -> None:
+        """Kopieer opties nadat Home Assistant de config-entry heeft gekoppeld."""
+        if self._options_loaded:
+            return
+        self._carriers = deepcopy(
+            dict(self.config_entry.options.get(CONF_CARRIERS, {}))
+        )
+        self._options_loaded = True
+
     def _save(self) -> FlowResult:
+        self._ensure_options_loaded()
         return self.async_create_entry(
             title="",
             data={
                 CONF_CARRIERS: self._carriers,
-                CONF_SCAN_INTERVAL: self._entry.options.get(
+                CONF_SCAN_INTERVAL: self.config_entry.options.get(
                     CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
                 ),
-                CONF_IMAP_TIMEOUT: self._entry.options.get(
+                CONF_IMAP_TIMEOUT: self.config_entry.options.get(
                     CONF_IMAP_TIMEOUT, DEFAULT_IMAP_TIMEOUT
                 ),
-                CONF_SCAN_WINDOW_DAYS: self._entry.options.get(
+                CONF_SCAN_WINDOW_DAYS: self.config_entry.options.get(
                     CONF_SCAN_WINDOW_DAYS, DEFAULT_SCAN_WINDOW_DAYS
                 ),
-                CONF_CONFIRMATION_ENABLED: self._entry.options.get(
+                CONF_CONFIRMATION_ENABLED: self.config_entry.options.get(
                     CONF_CONFIRMATION_ENABLED, DEFAULT_CONFIRMATION_ENABLED
                 ),
-                CONF_CONFIRMATION_TIME: self._entry.options.get(
+                CONF_CONFIRMATION_TIME: self.config_entry.options.get(
                     CONF_CONFIRMATION_TIME, DEFAULT_CONFIRMATION_TIME
                 ),
-                CONF_NOTIFY_SERVICE: self._entry.options.get(
+                CONF_NOTIFY_SERVICE: self.config_entry.options.get(
                     CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
                 ),
             },
         )
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        self._ensure_options_loaded()
         return self.async_show_menu(
             step_id="init",
             menu_options=[
@@ -252,32 +262,44 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             ],
         )
 
-    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         return self._save()
 
     async def async_step_scan_interval(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        self._ensure_options_loaded()
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_CARRIERS: self._carriers,
-                    CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
-                    CONF_IMAP_TIMEOUT: user_input[CONF_IMAP_TIMEOUT],
-                    CONF_SCAN_WINDOW_DAYS: user_input[CONF_SCAN_WINDOW_DAYS],
-                    CONF_CONFIRMATION_ENABLED: user_input[
-                        CONF_CONFIRMATION_ENABLED
-                    ],
-                    CONF_CONFIRMATION_TIME: user_input[CONF_CONFIRMATION_TIME],
-                    CONF_NOTIFY_SERVICE: user_input[CONF_NOTIFY_SERVICE],
-                },
-            )
+            notify_service = user_input.get(CONF_NOTIFY_SERVICE, "").strip()
+            if notify_service and re.fullmatch(
+                r"notify\.[a-z0-9_]+", notify_service
+            ) is None:
+                errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
+            else:
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_CARRIERS: self._carriers,
+                        CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                        CONF_IMAP_TIMEOUT: user_input[CONF_IMAP_TIMEOUT],
+                        CONF_SCAN_WINDOW_DAYS: user_input[CONF_SCAN_WINDOW_DAYS],
+                        CONF_CONFIRMATION_ENABLED: user_input[
+                            CONF_CONFIRMATION_ENABLED
+                        ],
+                        CONF_CONFIRMATION_TIME: user_input[
+                            CONF_CONFIRMATION_TIME
+                        ],
+                        CONF_NOTIFY_SERVICE: notify_service,
+                    },
+                )
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_SCAN_INTERVAL,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
                     ),
                 ): vol.All(
@@ -286,7 +308,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(
                     CONF_IMAP_TIMEOUT,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_IMAP_TIMEOUT, DEFAULT_IMAP_TIMEOUT
                     ),
                 ): vol.All(
@@ -295,7 +317,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(
                     CONF_SCAN_WINDOW_DAYS,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_SCAN_WINDOW_DAYS, DEFAULT_SCAN_WINDOW_DAYS
                     ),
                 ): vol.All(
@@ -306,32 +328,35 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(
                     CONF_CONFIRMATION_ENABLED,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_CONFIRMATION_ENABLED, DEFAULT_CONFIRMATION_ENABLED
                     ),
                 ): bool,
                 vol.Required(
                     CONF_CONFIRMATION_TIME,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_CONFIRMATION_TIME, DEFAULT_CONFIRMATION_TIME
                     ),
                 ): vol.Match(
                     r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$"
                 ),
-                vol.Required(
+                vol.Optional(
                     CONF_NOTIFY_SERVICE,
-                    default=self._entry.options.get(
+                    default=(user_input or self.config_entry.options).get(
                         CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
                     ),
-                ): vol.Any("", vol.Match(r"^notify\.[a-z0-9_]+$")),
+                ): str,
             }
         )
-        return self.async_show_form(step_id="scan_interval", data_schema=schema)
+        return self.async_show_form(
+            step_id="scan_interval", data_schema=schema, errors=errors
+        )
 
     async def async_step_add_simple_carrier(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Voeg een vervoerder toe met één gecontroleerde titel per status."""
+        self._ensure_options_loaded()
         errors: dict[str, str] = {}
         if user_input is not None:
             carrier_id = (
@@ -386,7 +411,11 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             carrier_id = (
-                user_input[CARRIER_NAME].strip().lower().replace(" ", "_").replace(".", "")
+                user_input[CARRIER_NAME]
+                .strip()
+                .lower()
+                .replace(" ", "_")
+                .replace(".", "")
             )
             if not carrier_id:
                 errors["base"] = "invalid_name"

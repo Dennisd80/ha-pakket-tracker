@@ -8,19 +8,20 @@ from __future__ import annotations
 
 import datetime
 import email
-from email.header import decode_header
-from email.utils import getaddresses, parsedate_to_datetime
 import hashlib
 import html as html_lib
 import imaplib
 import logging
 import re
 from datetime import timedelta
+from email.header import decode_header
+from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -33,12 +34,12 @@ from .const import (
     CARRIER_NAME,
     CARRIER_SENDERS,
     CONF_CARRIERS,
-    CONF_NOTIFY_SERVICE,
     CONF_FOLDER,
     CONF_IMAP_PORT,
     CONF_IMAP_SERVER,
     CONF_IMAP_SSL,
     CONF_IMAP_TIMEOUT,
+    CONF_NOTIFY_SERVICE,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_WINDOW_DAYS,
@@ -475,7 +476,8 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         except (OSError, TimeoutError, _ImapCommandError, imaplib.IMAP4.error) as err:
             if self.data is not None:
                 _LOGGER.warning(
-                    "Tijdelijke IMAP-scanfout; laatst bekende pakketdata blijft behouden: %s",
+                    "Tijdelijke IMAP-scanfout; laatst bekende pakketdata blijft "
+                    "behouden: %s",
                     err,
                 )
                 return self.data
@@ -537,11 +539,22 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
     def _direct_parcels(self) -> list[dict[str, Any]]:
         """Lees de canonieke parcel-lijsten van Parcel Aggregator indien aanwezig."""
         direct: dict[str, dict[str, Any]] = {}
-        for entity_id in (
-            "sensor.parcel_aggregator_incoming_parcels",
-            "sensor.parcel_aggregator_delivered_parcels",
-            "sensor.parcel_aggregator_awaiting_pickup",
-        ):
+        registry = er.async_get(self.hass)
+        sources = {
+            "parcel_aggregator_incoming": (
+                "sensor.parcel_aggregator_incoming_parcels"
+            ),
+            "parcel_aggregator_delivered": (
+                "sensor.parcel_aggregator_delivered_parcels"
+            ),
+            "parcel_aggregator_awaiting_pickup": (
+                "sensor.parcel_aggregator_awaiting_pickup"
+            ),
+        }
+        for unique_id, fallback_entity_id in sources.items():
+            entity_id = registry.async_get_entity_id(
+                "sensor", "parcel_aggregator", unique_id
+            ) or fallback_entity_id
             state = self.hass.states.get(entity_id)
             parcels = state.attributes.get("parcels", []) if state else []
             if not isinstance(parcels, list):
@@ -651,6 +664,8 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         notify_service = self.entry.options.get(
             CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
         )
+        if not notify_service:
+            return False
         if "." not in notify_service:
             _LOGGER.warning("Ongeldige notify-service: %s", notify_service)
             return False

@@ -85,14 +85,15 @@
           "imap_timeout": "IMAP-time-out in seconden (10–120)",
           "scan_window_days": "Aantal dagen terugzoeken (1–14)"
           ,"confirmation_enabled": "Dagelijkse ontvangstbevestiging inschakelen"
-          ,"confirmation_time": "Tijdstip ontvangstbevestiging (HH:MM:SS)"
+          ,"confirmation_time": "Tijdstip ontvangstbevestiging (HH:MM of HH:MM:SS)"
           ,"notify_service": "Notify-service voor de telefoon"
         }
       }
     },
     "error": {
       "already_exists": "Er bestaat al een vervoerder met deze naam.",
-      "invalid_name": "Vul een geldige naam in."
+      "invalid_name": "Vul een geldige naam in.",
+      "invalid_notify_service": "Gebruik een service zoals notify.mobile_app_mijn_telefoon of laat dit veld leeg."
     },
     "abort": {
       "no_carriers": "Er zijn nog geen vervoerders geconfigureerd."
