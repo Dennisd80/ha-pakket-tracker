@@ -85,7 +85,7 @@ async def test_simple_carrier_form_opens_and_saves(hass):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "name": "Trunkrs",
+            "name": "Example Express",
             "email_address": "updates@example.com",
             "delivering_title": "vandaag bezorgd",
             "delivered_title": "pakket bezorgd",
@@ -93,4 +93,4 @@ async def test_simple_carrier_form_opens_and_saves(hass):
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert "trunkrs" in result["data"][CONF_CARRIERS]
+    assert "example_express" in result["data"][CONF_CARRIERS]
