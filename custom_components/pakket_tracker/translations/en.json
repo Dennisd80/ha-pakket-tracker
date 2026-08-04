@@ -93,7 +93,10 @@
     "error": {
       "already_exists": "A carrier with this name already exists.",
       "invalid_name": "Enter a valid name.",
-      "invalid_notify_service": "Use a service such as notify.mobile_app_my_phone or leave this field empty."
+      "invalid_notify_service": "Use a service such as notify.mobile_app_my_phone or leave this field empty.",
+      "invalid_confirmation_time": "Use a valid time formatted as HH:MM or HH:MM:SS.",
+      "invalid_email_address": "Enter a valid sender address.",
+      "required_status_text": "Enter recognizable text for out for delivery or today."
     },
     "abort": {
       "no_carriers": "No carriers have been configured yet."

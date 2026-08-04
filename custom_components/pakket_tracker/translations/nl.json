@@ -93,7 +93,10 @@
     "error": {
       "already_exists": "Er bestaat al een vervoerder met deze naam.",
       "invalid_name": "Vul een geldige naam in.",
-      "invalid_notify_service": "Gebruik een service zoals notify.mobile_app_mijn_telefoon of laat dit veld leeg."
+      "invalid_notify_service": "Gebruik een service zoals notify.mobile_app_mijn_telefoon of laat dit veld leeg.",
+      "invalid_confirmation_time": "Gebruik een geldige tijd als HH:MM of HH:MM:SS.",
+      "invalid_email_address": "Vul een geldig afzenderadres in.",
+      "required_status_text": "Vul herkenbare tekst voor onderweg of vandaag in."
     },
     "abort": {
       "no_carriers": "Er zijn nog geen vervoerders geconfigureerd."

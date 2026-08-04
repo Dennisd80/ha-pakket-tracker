@@ -1,6 +1,8 @@
 """Regressietests voor de options-flow."""
 
+import voluptuous_serialize
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import config_validation as cv
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pakket_tracker.const import (
@@ -32,6 +34,13 @@ def _entry() -> MockConfigEntry:
     )
 
 
+def _assert_frontend_serializable(result) -> None:
+    """Boots de laatste REST-conversie na die de browser nodig heeft."""
+    voluptuous_serialize.convert(
+        result["data_schema"], custom_serializer=cv.custom_serializer
+    )
+
+
 async def _open_menu_step(hass, entry, step_id):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
@@ -47,6 +56,7 @@ async def test_scan_settings_form_opens_and_saves(hass):
     result = await _open_menu_step(hass, entry, "scan_interval")
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "scan_interval"
+    _assert_frontend_serializable(result)
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -70,6 +80,7 @@ async def test_simple_carrier_form_opens_and_saves(hass):
     result = await _open_menu_step(hass, entry, "add_simple_carrier")
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "add_simple_carrier"
+    _assert_frontend_serializable(result)
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],

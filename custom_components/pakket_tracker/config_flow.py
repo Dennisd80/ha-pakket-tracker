@@ -273,8 +273,14 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
         self._ensure_options_loaded()
         errors: dict[str, str] = {}
         if user_input is not None:
+            confirmation_time = user_input[CONF_CONFIRMATION_TIME].strip()
             notify_service = user_input.get(CONF_NOTIFY_SERVICE, "").strip()
-            if notify_service and re.fullmatch(
+            if re.fullmatch(
+                r"(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?",
+                confirmation_time,
+            ) is None:
+                errors[CONF_CONFIRMATION_TIME] = "invalid_confirmation_time"
+            elif notify_service and re.fullmatch(
                 r"notify\.[a-z0-9_]+", notify_service
             ) is None:
                 errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
@@ -289,9 +295,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                         CONF_CONFIRMATION_ENABLED: user_input[
                             CONF_CONFIRMATION_ENABLED
                         ],
-                        CONF_CONFIRMATION_TIME: user_input[
-                            CONF_CONFIRMATION_TIME
-                        ],
+                        CONF_CONFIRMATION_TIME: confirmation_time,
                         CONF_NOTIFY_SERVICE: notify_service,
                     },
                 )
@@ -337,9 +341,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     default=(user_input or self.config_entry.options).get(
                         CONF_CONFIRMATION_TIME, DEFAULT_CONFIRMATION_TIME
                     ),
-                ): vol.Match(
-                    r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$"
-                ),
+                ): str,
                 vol.Optional(
                     CONF_NOTIFY_SERVICE,
                     default=(user_input or self.config_entry.options).get(
@@ -359,8 +361,11 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
         self._ensure_options_loaded()
         errors: dict[str, str] = {}
         if user_input is not None:
+            carrier_name = user_input[CARRIER_NAME].strip()
+            email_address = user_input["email_address"].strip().lower()
+            delivering_title = user_input["delivering_title"].strip().lower()
             carrier_id = (
-                user_input[CARRIER_NAME]
+                carrier_name
                 .strip()
                 .lower()
                 .replace(" ", "_")
@@ -368,15 +373,17 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             )
             if not carrier_id:
                 errors["base"] = "invalid_name"
+            elif re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_address) is None:
+                errors["email_address"] = "invalid_email_address"
+            elif not delivering_title:
+                errors["delivering_title"] = "required_status_text"
             elif carrier_id in self._carriers:
                 errors["base"] = "already_exists"
             else:
                 self._carriers[carrier_id] = {
-                    CARRIER_NAME: user_input[CARRIER_NAME].strip(),
-                    CARRIER_SENDERS: [user_input["email_address"].strip().lower()],
-                    CARRIER_DELIVERING_SUBJECTS: [
-                        user_input["delivering_title"].strip().lower()
-                    ],
+                    CARRIER_NAME: carrier_name,
+                    CARRIER_SENDERS: [email_address],
+                    CARRIER_DELIVERING_SUBJECTS: [delivering_title],
                     CARRIER_DELIVERED_SUBJECTS: (
                         [user_input["delivered_title"].strip().lower()]
                         if user_input.get("delivered_title", "").strip()
@@ -393,9 +400,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(CARRIER_NAME): str,
-                vol.Required("email_address"): vol.Match(
-                    r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
-                ),
+                vol.Required("email_address"): str,
                 vol.Required("delivering_title"): str,
                 vol.Optional("delivered_title", default=""): str,
                 vol.Optional("missed_title", default=""): str,
