@@ -46,6 +46,8 @@
         "data": {
           "name": "Naam vervoerder",
           "email_address": "Exact afzenderadres",
+          "registered_title": "Titeltekst voor aangemeld (optioneel)",
+          "transit_title": "Titeltekst voor onderweg naar sortering (optioneel)",
           "delivering_title": "Titeltekst voor onderweg/vandaag",
           "delivered_title": "Titeltekst voor bezorgd (optioneel)",
           "missed_title": "Titeltekst voor gemist (optioneel)"
@@ -56,9 +58,12 @@
         "data": {
           "name": "Naam (bv. PostNL)",
           "senders": "Afzenderadres(sen), één per regel",
+          "registered_subjects": "Patronen 'aangemeld', één per regel",
+          "transit_subjects": "Patronen 'in transit/sorteercentrum', één per regel",
           "delivering_subjects": "Onderwerp-patronen 'onderweg', één per regel",
           "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
-          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel"
+          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel",
+          "tracking_patterns": "Trackingcode-regexen, één per regel (optioneel)"
         }
       },
       "edit_carrier": {
@@ -69,9 +74,12 @@
         "title": "{carrier_name} bewerken",
         "data": {
           "senders": "Afzenderadres(sen), één per regel",
+          "registered_subjects": "Patronen 'aangemeld', één per regel",
+          "transit_subjects": "Patronen 'in transit/sorteercentrum', één per regel",
           "delivering_subjects": "Onderwerp-patronen 'onderweg', één per regel",
           "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
-          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel"
+          "missed_subjects": "Onderwerp-patronen 'gemist', één per regel",
+          "tracking_patterns": "Trackingcode-regexen, één per regel (optioneel)"
         }
       },
       "remove_carrier": {

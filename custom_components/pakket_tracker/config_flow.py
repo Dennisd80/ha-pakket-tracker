@@ -4,6 +4,7 @@
 - OptionsFlow: vervoerders toevoegen / bewerken / verwijderen, en de
   scan-interval aanpassen.
 """
+
 from __future__ import annotations
 
 import imaplib
@@ -22,7 +23,10 @@ from .const import (
     CARRIER_DELIVERING_SUBJECTS,
     CARRIER_MISSED_SUBJECTS,
     CARRIER_NAME,
+    CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
+    CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_CONFIRMATION_ENABLED,
     CONF_CONFIRMATION_TIME,
@@ -33,6 +37,7 @@ from .const import (
     CONF_IMAP_TIMEOUT,
     CONF_NOTIFY_SERVICE,
     CONF_PASSWORD,
+    CONF_PRESET_VERSION,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_WINDOW_DAYS,
     CONF_USERNAME,
@@ -52,6 +57,7 @@ from .const import (
     MIN_SCAN_INTERVAL,
     MIN_SCAN_WINDOW_DAYS,
     PRESET_CARRIERS,
+    PRESET_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,6 +71,13 @@ def _split_lines(value: str) -> list[str]:
 
 def _join_lines(values: list[str]) -> str:
     return "\n".join(values)
+
+
+def _split_regex_lines(value: str) -> list[str]:
+    """Behoud hoofdletters en regex-escapes exact zoals ingevoerd."""
+    if not value:
+        return []
+    return [line.strip() for line in value.splitlines() if line.strip()]
 
 
 def _test_imap_connection(
@@ -134,6 +147,7 @@ class PakketTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_CONFIRMATION_ENABLED: DEFAULT_CONFIRMATION_ENABLED,
                         CONF_CONFIRMATION_TIME: DEFAULT_CONFIRMATION_TIME,
                         CONF_NOTIFY_SERVICE: DEFAULT_NOTIFY_SERVICE,
+                        CONF_PRESET_VERSION: PRESET_VERSION,
                     },
                 )
 
@@ -149,9 +163,7 @@ class PakketTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> FlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Start herauthenticatie na een afgewezen IMAP-wachtwoord."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
@@ -243,6 +255,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 CONF_NOTIFY_SERVICE: self.config_entry.options.get(
                     CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
                 ),
+                CONF_PRESET_VERSION: self.config_entry.options.get(
+                    CONF_PRESET_VERSION, PRESET_VERSION
+                ),
             },
         )
 
@@ -275,14 +290,18 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             confirmation_time = user_input[CONF_CONFIRMATION_TIME].strip()
             notify_service = user_input.get(CONF_NOTIFY_SERVICE, "").strip()
-            if re.fullmatch(
-                r"(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?",
-                confirmation_time,
-            ) is None:
+            if (
+                re.fullmatch(
+                    r"(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?",
+                    confirmation_time,
+                )
+                is None
+            ):
                 errors[CONF_CONFIRMATION_TIME] = "invalid_confirmation_time"
-            elif notify_service and re.fullmatch(
-                r"notify\.[a-z0-9_]+", notify_service
-            ) is None:
+            elif (
+                notify_service
+                and re.fullmatch(r"notify\.[a-z0-9_]+", notify_service) is None
+            ):
                 errors[CONF_NOTIFY_SERVICE] = "invalid_notify_service"
             else:
                 return self.async_create_entry(
@@ -297,6 +316,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                         ],
                         CONF_CONFIRMATION_TIME: confirmation_time,
                         CONF_NOTIFY_SERVICE: notify_service,
+                        CONF_PRESET_VERSION: self.config_entry.options.get(
+                            CONF_PRESET_VERSION, PRESET_VERSION
+                        ),
                     },
                 )
         schema = vol.Schema(
@@ -326,9 +348,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     ),
                 ): vol.All(
                     vol.Coerce(int),
-                    vol.Range(
-                        min=MIN_SCAN_WINDOW_DAYS, max=MAX_SCAN_WINDOW_DAYS
-                    ),
+                    vol.Range(min=MIN_SCAN_WINDOW_DAYS, max=MAX_SCAN_WINDOW_DAYS),
                 ),
                 vol.Required(
                     CONF_CONFIRMATION_ENABLED,
@@ -364,13 +384,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             carrier_name = user_input[CARRIER_NAME].strip()
             email_address = user_input["email_address"].strip().lower()
             delivering_title = user_input["delivering_title"].strip().lower()
-            carrier_id = (
-                carrier_name
-                .strip()
-                .lower()
-                .replace(" ", "_")
-                .replace(".", "")
-            )
+            carrier_id = carrier_name.strip().lower().replace(" ", "_").replace(".", "")
             if not carrier_id:
                 errors["base"] = "invalid_name"
             elif re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_address) is None:
@@ -383,6 +397,16 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 self._carriers[carrier_id] = {
                     CARRIER_NAME: carrier_name,
                     CARRIER_SENDERS: [email_address],
+                    CARRIER_REGISTERED_SUBJECTS: (
+                        [user_input["registered_title"].strip().lower()]
+                        if user_input.get("registered_title", "").strip()
+                        else []
+                    ),
+                    CARRIER_TRANSIT_SUBJECTS: (
+                        [user_input["transit_title"].strip().lower()]
+                        if user_input.get("transit_title", "").strip()
+                        else []
+                    ),
                     CARRIER_DELIVERING_SUBJECTS: [delivering_title],
                     CARRIER_DELIVERED_SUBJECTS: (
                         [user_input["delivered_title"].strip().lower()]
@@ -394,6 +418,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                         if user_input.get("missed_title", "").strip()
                         else []
                     ),
+                    CARRIER_TRACKING_PATTERNS: [],
                 }
                 return self._save()
 
@@ -401,6 +426,8 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(CARRIER_NAME): str,
                 vol.Required("email_address"): str,
+                vol.Optional("registered_title", default=""): str,
+                vol.Optional("transit_title", default=""): str,
                 vol.Required("delivering_title"): str,
                 vol.Optional("delivered_title", default=""): str,
                 vol.Optional("missed_title", default=""): str,
@@ -430,6 +457,12 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 self._carriers[carrier_id] = {
                     CARRIER_NAME: user_input[CARRIER_NAME].strip(),
                     CARRIER_SENDERS: _split_lines(user_input[CARRIER_SENDERS]),
+                    CARRIER_REGISTERED_SUBJECTS: _split_lines(
+                        user_input.get(CARRIER_REGISTERED_SUBJECTS, "")
+                    ),
+                    CARRIER_TRANSIT_SUBJECTS: _split_lines(
+                        user_input.get(CARRIER_TRANSIT_SUBJECTS, "")
+                    ),
                     CARRIER_DELIVERING_SUBJECTS: _split_lines(
                         user_input[CARRIER_DELIVERING_SUBJECTS]
                     ),
@@ -439,6 +472,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     CARRIER_MISSED_SUBJECTS: _split_lines(
                         user_input.get(CARRIER_MISSED_SUBJECTS, "")
                     ),
+                    CARRIER_TRACKING_PATTERNS: _split_regex_lines(
+                        user_input.get(CARRIER_TRACKING_PATTERNS, "")
+                    ),
                 }
                 return self._save()
 
@@ -446,9 +482,12 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(CARRIER_NAME): str,
                 vol.Required(CARRIER_SENDERS): str,
+                vol.Optional(CARRIER_REGISTERED_SUBJECTS, default=""): str,
+                vol.Optional(CARRIER_TRANSIT_SUBJECTS, default=""): str,
                 vol.Required(CARRIER_DELIVERING_SUBJECTS): str,
                 vol.Optional(CARRIER_DELIVERED_SUBJECTS, default=""): str,
                 vol.Optional(CARRIER_MISSED_SUBJECTS, default=""): str,
+                vol.Optional(CARRIER_TRACKING_PATTERNS, default=""): str,
             }
         )
         return self.async_show_form(
@@ -481,6 +520,12 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             carrier[CARRIER_SENDERS] = _split_lines(user_input[CARRIER_SENDERS])
+            carrier[CARRIER_REGISTERED_SUBJECTS] = _split_lines(
+                user_input.get(CARRIER_REGISTERED_SUBJECTS, "")
+            )
+            carrier[CARRIER_TRANSIT_SUBJECTS] = _split_lines(
+                user_input.get(CARRIER_TRANSIT_SUBJECTS, "")
+            )
             carrier[CARRIER_DELIVERING_SUBJECTS] = _split_lines(
                 user_input[CARRIER_DELIVERING_SUBJECTS]
             )
@@ -490,6 +535,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             carrier[CARRIER_MISSED_SUBJECTS] = _split_lines(
                 user_input.get(CARRIER_MISSED_SUBJECTS, "")
             )
+            carrier[CARRIER_TRACKING_PATTERNS] = _split_regex_lines(
+                user_input.get(CARRIER_TRACKING_PATTERNS, "")
+            )
             self._carriers[carrier_id] = carrier
             return self._save()
 
@@ -497,6 +545,14 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(
                     CARRIER_SENDERS, default=_join_lines(carrier[CARRIER_SENDERS])
+                ): str,
+                vol.Optional(
+                    CARRIER_REGISTERED_SUBJECTS,
+                    default=_join_lines(carrier.get(CARRIER_REGISTERED_SUBJECTS, [])),
+                ): str,
+                vol.Optional(
+                    CARRIER_TRANSIT_SUBJECTS,
+                    default=_join_lines(carrier.get(CARRIER_TRANSIT_SUBJECTS, [])),
                 ): str,
                 vol.Required(
                     CARRIER_DELIVERING_SUBJECTS,
@@ -509,6 +565,10 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CARRIER_MISSED_SUBJECTS,
                     default=_join_lines(carrier.get(CARRIER_MISSED_SUBJECTS, [])),
+                ): str,
+                vol.Optional(
+                    CARRIER_TRACKING_PATTERNS,
+                    default=_join_lines(carrier.get(CARRIER_TRACKING_PATTERNS, [])),
                 ): str,
             }
         )

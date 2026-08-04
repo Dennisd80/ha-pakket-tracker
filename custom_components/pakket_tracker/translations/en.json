@@ -46,6 +46,8 @@
         "data": {
           "name": "Carrier name",
           "email_address": "Exact sender address",
+          "registered_title": "Registered/pre-advice text (optional)",
+          "transit_title": "In-transit/sorting text (optional)",
           "delivering_title": "Title text for out for delivery/today",
           "delivered_title": "Title text for delivered (optional)",
           "missed_title": "Title text for missed delivery (optional)"
@@ -56,9 +58,12 @@
         "data": {
           "name": "Name (for example PostNL)",
           "senders": "Sender addresses, one per line",
+          "registered_subjects": "Registered/pre-advice patterns, one per line",
+          "transit_subjects": "In-transit/sorting patterns, one per line",
           "delivering_subjects": "Out-for-delivery patterns, one per line",
           "delivered_subjects": "Delivered patterns, one per line",
-          "missed_subjects": "Missed-delivery patterns, one per line"
+          "missed_subjects": "Missed-delivery patterns, one per line",
+          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)"
         }
       },
       "edit_carrier": {
@@ -69,9 +74,12 @@
         "title": "Edit {carrier_name}",
         "data": {
           "senders": "Sender addresses, one per line",
+          "registered_subjects": "Registered/pre-advice patterns, one per line",
+          "transit_subjects": "In-transit/sorting patterns, one per line",
           "delivering_subjects": "Out-for-delivery patterns, one per line",
           "delivered_subjects": "Delivered patterns, one per line",
-          "missed_subjects": "Missed-delivery patterns, one per line"
+          "missed_subjects": "Missed-delivery patterns, one per line",
+          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)"
         }
       },
       "remove_carrier": {

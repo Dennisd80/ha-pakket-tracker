@@ -1,14 +1,24 @@
 """Tests voor pure parsing- en classificatiehelpers."""
 
+from copy import deepcopy
+
 import pytest
 
-from custom_components.pakket_tracker import _parse_confirmation_time
+from custom_components.pakket_tracker import (
+    _parse_confirmation_time,
+    _upgrade_preset_options,
+)
+from custom_components.pakket_tracker.config_flow import _split_regex_lines
 from custom_components.pakket_tracker.const import (
     CARRIER_DELIVERED_SUBJECTS,
     CARRIER_DELIVERING_SUBJECTS,
     CARRIER_MISSED_SUBJECTS,
     CARRIER_NAME,
     CARRIER_SENDERS,
+    CONF_CARRIERS,
+    CONF_PRESET_VERSION,
+    PRESET_CARRIERS,
+    PRESET_VERSION,
 )
 from custom_components.pakket_tracker.coordinator import (
     _classify_messages,
@@ -40,6 +50,169 @@ def test_sender_matching_is_exact_and_supports_domains():
 def test_extract_tracking_code():
     assert _extract_tracking_code("Je barcode is 3SABCDEFGHIJKL") == "3SABCDEFGHIJKL"
     assert _extract_tracking_code("Je afspraak is op 20260804") is None
+
+
+def test_tracking_regex_input_preserves_case_and_escapes():
+    assert _split_regex_lines("\\D+\n[A-Z]{2}") == ["\\D+", "[A-Z]{2}"]
+
+
+@pytest.mark.parametrize(
+    ("carrier_id", "sender", "subject", "tracking_code", "status"),
+    [
+        (
+            "bolcom",
+            "noreply@bol.com",
+            "Je bestelling is onderweg",
+            "3SABCDEFGHIJKL",
+            "transit",
+        ),
+        (
+            "aliexpress",
+            "transaction@notice.aliexpress.com",
+            "Your package has been delivered",
+            "LP123456789CN",
+            "delivered",
+        ),
+        (
+            "usps",
+            "auto-reply@tracking.usps.com",
+            "Out for Delivery",
+            "9400111899223856928499",
+            "delivering",
+        ),
+        (
+            "ups",
+            "pkginfo@ups.com",
+            "Your UPS Package was delivered",
+            "1Z999AA10123456784",
+            "delivered",
+        ),
+        (
+            "fedex",
+            "trackingupdates@fedex.com",
+            "FedEx Delivery Exception",
+            "123456789012",
+            "missed",
+        ),
+    ],
+)
+def test_new_preset_carriers_are_classified(
+    carrier_id, sender, subject, tracking_code, status
+):
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": [sender],
+                "subject": subject.casefold(),
+                "body": f"tracking number: {tracking_code}".casefold(),
+                "message_id": f"{carrier_id}@example.com",
+                "timestamp": 1.0,
+            }
+        ],
+        {carrier_id: PRESET_CARRIERS[carrier_id]},
+    )
+
+    assert result[carrier_id]["packages"] == 1
+    assert result[carrier_id][status] == 1
+    assert result[carrier_id]["tracking"][status] == [tracking_code]
+
+
+def test_carrier_status_text_from_wrong_sender_is_ignored():
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["phishing@example.com"],
+                "subject": "your package has been delivered",
+                "body": "tracking number: 123456789012",
+                "message_id": "wrong-sender@example.com",
+                "timestamp": 1.0,
+            }
+        ],
+        {"fedex": PRESET_CARRIERS["fedex"]},
+    )
+
+    assert result["fedex"]["packages"] == 0
+
+
+def test_trunkrs_sequence_updates_one_package_to_delivered():
+    tracking_code = "987654321"
+    messages = [
+        {
+            "uid": "1",
+            "senders": ["noreply@trunkrs.nl"],
+            "subject": f"Bevestiging aanmelding pakket: [{tracking_code}]",
+            "body": "Je pakket is aangemeld en nog niet fysiek ontvangen",
+            "message_id": "trunkrs-registered@example.com",
+            "timestamp": 1.0,
+        },
+        {
+            "uid": "2",
+            "senders": ["noreply@trunkrs.nl"],
+            "subject": f"Bevestiging in sorteercentrum: [{tracking_code}]",
+            "body": "Je pakket is aangekomen in ons sorteercentrum",
+            "message_id": "trunkrs-transit@example.com",
+            "timestamp": 2.0,
+        },
+        {
+            "uid": "3",
+            "senders": ["noreply@trunkrs.nl"],
+            "subject": f"Afgeleverd: [{tracking_code}]",
+            "body": "Je pakket is succesvol afgeleverd",
+            "message_id": "trunkrs-delivered@example.com",
+            "timestamp": 3.0,
+        },
+    ]
+
+    result = _classify_messages(
+        messages,
+        {"trunkrs": PRESET_CARRIERS["trunkrs"]},
+    )["trunkrs"]
+
+    assert result["packages"] == 1
+    assert result["registered"] == 0
+    assert result["transit"] == 0
+    assert result["delivered"] == 1
+    assert result["tracking"]["delivered"] == [tracking_code]
+
+
+def test_budbee_evening_delivery_is_out_for_delivery():
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["no-reply@budbee.com"],
+                "subject": "Vandaag bezorgd",
+                "body": (
+                    "Je bestelling wordt vanavond bezorgd. "
+                    "We komen langs tussen 14:00 en 19:00."
+                ),
+                "message_id": "budbee@example.com",
+                "timestamp": 1.0,
+            }
+        ],
+        {"budbee": PRESET_CARRIERS["budbee"]},
+    )["budbee"]
+
+    assert result["packages"] == 1
+    assert result["delivering"] == 1
+
+
+def test_preset_upgrade_is_one_time_and_preserves_custom_values():
+    postnl = deepcopy(PRESET_CARRIERS["postnl"])
+    postnl[CARRIER_NAME] = "Mijn PostNL"
+    postnl[CARRIER_SENDERS] = ["custom@example.com"]
+    options = {CONF_CARRIERS: {"postnl": postnl}}
+
+    upgraded = _upgrade_preset_options(options)
+
+    assert upgraded is not None
+    assert upgraded[CONF_PRESET_VERSION] == PRESET_VERSION
+    assert upgraded[CONF_CARRIERS]["postnl"][CARRIER_NAME] == "Mijn PostNL"
+    assert "custom@example.com" in upgraded[CONF_CARRIERS]["postnl"][CARRIER_SENDERS]
+    assert set(PRESET_CARRIERS) <= set(upgraded[CONF_CARRIERS])
+    assert _upgrade_preset_options(upgraded) is None
 
 
 def test_classification_prefers_latest_status_for_tracking_code():

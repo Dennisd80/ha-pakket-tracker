@@ -4,6 +4,7 @@ De mailboxscan draait buiten de event-loop, gebruikt stabiele IMAP-UID's en
 bewaart alleen reeds geparseerde mailvelden in Home Assistant storage. Daardoor
 worden bestaande mails niet bij iedere scan opnieuw gedownload.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -32,7 +33,10 @@ from .const import (
     CARRIER_DELIVERING_SUBJECTS,
     CARRIER_MISSED_SUBJECTS,
     CARRIER_NAME,
+    CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
+    CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_FOLDER,
     CONF_IMAP_PORT,
@@ -285,8 +289,20 @@ def _sender_matches(configured: list[str], actual: list[str]) -> bool:
     return False
 
 
-def _extract_tracking_code(text: str) -> str | None:
+def _extract_tracking_code(
+    text: str, carrier_patterns: list[str] | None = None
+) -> str | None:
     """Zoek een geloofwaardige trackingcode in onderwerp en body."""
+    for raw_pattern in carrier_patterns or []:
+        try:
+            match = re.search(raw_pattern, text, re.IGNORECASE)
+        except re.error:
+            _LOGGER.warning("Ongeldige trackingregex overgeslagen: %s", raw_pattern)
+            continue
+        if match:
+            value = match.group(1) if match.lastindex else match.group(0)
+            return re.sub(r"[\s-]", "", value).upper()
+
     for pattern in _TRACKING_PATTERNS:
         if match := pattern.search(text):
             return match.group(1).upper().replace("-", "")
@@ -305,6 +321,14 @@ def _classify_messages(
     for carrier_id, rule in carriers.items():
         senders = [str(value).casefold() for value in rule.get(CARRIER_SENDERS, [])]
         patterns = {
+            "registered": [
+                str(value).casefold()
+                for value in rule.get(CARRIER_REGISTERED_SUBJECTS, [])
+            ],
+            "transit": [
+                str(value).casefold()
+                for value in rule.get(CARRIER_TRANSIT_SUBJECTS, [])
+            ],
             "delivering": [
                 str(value).casefold()
                 for value in rule.get(CARRIER_DELIVERING_SUBJECTS, [])
@@ -314,8 +338,7 @@ def _classify_messages(
                 for value in rule.get(CARRIER_DELIVERED_SUBJECTS, [])
             ],
             "missed": [
-                str(value).casefold()
-                for value in rule.get(CARRIER_MISSED_SUBJECTS, [])
+                str(value).casefold() for value in rule.get(CARRIER_MISSED_SUBJECTS, [])
             ],
         }
         packages: dict[str, dict[str, Any]] = {}
@@ -328,14 +351,23 @@ def _classify_messages(
             # Een status is exclusief. De zwaarste/eindstatus wint als één mail
             # door generieke teksten meer dan één patroon bevat.
             status: str | None = None
-            for candidate in ("missed", "delivered", "delivering"):
+            for candidate in (
+                "missed",
+                "delivered",
+                "delivering",
+                "transit",
+                "registered",
+            ):
                 if any(pattern in haystack for pattern in patterns[candidate]):
                     status = candidate
                     break
             if status is None:
                 continue
 
-            tracking_code = _extract_tracking_code(haystack)
+            tracking_code = _extract_tracking_code(
+                haystack,
+                [str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])],
+            )
             message_id = message.get("message_id")
             message_fingerprint = (
                 hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:16]
@@ -380,11 +412,19 @@ def _classify_messages(
             )
         ]
         counts: dict[str, Any] = {
+            "registered": 0,
+            "transit": 0,
             "delivering": 0,
             "delivered": 0,
             "packages": len(visible_packages),
             "missed": 0,
-            "tracking": {"delivering": [], "delivered": [], "missed": []},
+            "tracking": {
+                "registered": [],
+                "transit": [],
+                "delivering": [],
+                "delivered": [],
+                "missed": [],
+            },
             "parcels": [],
         }
         for package in visible_packages:
@@ -393,6 +433,8 @@ def _classify_messages(
             if package["tracking_code"]:
                 counts["tracking"][status].append(package["tracking_code"])
             canonical_status = {
+                "registered": "registered",
+                "transit": "in_transit",
                 "delivering": "out_for_delivery",
                 "delivered": "delivered",
                 "missed": "problem",
@@ -503,9 +545,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 fetched,
                 max(0, len(messages) - fetched),
             )
-        carriers: dict[str, dict[str, Any]] = self.entry.options.get(
-            CONF_CARRIERS, {}
-        )
+        carriers: dict[str, dict[str, Any]] = self.entry.options.get(CONF_CARRIERS, {})
         self._purge_old_confirmations()
         confirmed_ids = set(self._cache.get("confirmed", {}))
         result = _classify_messages(messages, carriers, confirmed_ids)
@@ -518,9 +558,9 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         if not isinstance(confirmed, dict):
             self._cache["confirmed"] = {}
             return
-        retention_days = self.entry.options.get(
-            CONF_SCAN_WINDOW_DAYS, DEFAULT_SCAN_WINDOW_DAYS
-        ) + 2
+        retention_days = (
+            self.entry.options.get(CONF_SCAN_WINDOW_DAYS, DEFAULT_SCAN_WINDOW_DAYS) + 2
+        )
         cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             days=retention_days
         )
@@ -541,9 +581,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         direct: dict[str, dict[str, Any]] = {}
         registry = er.async_get(self.hass)
         sources = {
-            "parcel_aggregator_incoming": (
-                "sensor.parcel_aggregator_incoming_parcels"
-            ),
+            "parcel_aggregator_incoming": ("sensor.parcel_aggregator_incoming_parcels"),
             "parcel_aggregator_delivered": (
                 "sensor.parcel_aggregator_delivered_parcels"
             ),
@@ -552,9 +590,10 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             ),
         }
         for unique_id, fallback_entity_id in sources.items():
-            entity_id = registry.async_get_entity_id(
-                "sensor", "parcel_aggregator", unique_id
-            ) or fallback_entity_id
+            entity_id = (
+                registry.async_get_entity_id("sensor", "parcel_aggregator", unique_id)
+                or fallback_entity_id
+            )
             state = self.hass.states.get(entity_id)
             parcels = state.attributes.get("parcels", []) if state else []
             if not isinstance(parcels, list):

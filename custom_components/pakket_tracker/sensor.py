@@ -1,9 +1,10 @@
 """Sensor-platform voor Pakket Tracker NL.
 
-Maakt per geconfigureerde vervoerder vier sensoren aan: delivering,
-delivered, packages en missed. Alle sensoren van een config entry
+Maakt per geconfigureerde vervoerder statussensoren aan voor registered,
+transit, delivering, delivered, packages en missed. Alle sensoren van een config entry
 worden gegroepeerd onder één device in de HA-UI.
 """
+
 from __future__ import annotations
 
 from homeassistant.components.sensor import RestoreSensor
@@ -22,6 +23,8 @@ from .const import (
 )
 
 ICONS = {
+    "registered": "mdi:package-variant-plus",
+    "transit": "mdi:truck-outline",
     "delivering": "mdi:truck-delivery",
     "delivered": "mdi:package-variant",
     "packages": "mdi:package-variant-closed",
@@ -29,6 +32,8 @@ ICONS = {
 }
 
 STAT_LABELS = {
+    "registered": "Registered",
+    "transit": "In Transit",
     "delivering": "Delivering",
     "delivered": "Delivered",
     "packages": "Packages",
@@ -56,15 +61,20 @@ async def async_setup_entry(
     entities: list[PakketTrackerSensor] = []
     for carrier_id, rule in carriers.items():
         carrier_name = rule.get(CARRIER_NAME, carrier_id)
-        for stat in ("delivering", "delivered", "packages", "missed"):
+        for stat in (
+            "registered",
+            "transit",
+            "delivering",
+            "delivered",
+            "packages",
+            "missed",
+        ):
             entities.append(
                 PakketTrackerSensor(coordinator, entry, carrier_id, carrier_name, stat)
             )
     for summary_key, (name, icon) in SUMMARY_SENSORS.items():
         entities.append(
-            PakketTrackerSummarySensor(
-                coordinator, entry, summary_key, name, icon
-            )
+            PakketTrackerSummarySensor(coordinator, entry, summary_key, name, icon)
         )
     async_add_entities(entities)
 

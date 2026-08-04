@@ -1,7 +1,7 @@
 """Constanten voor Pakket Tracker NL."""
 
 DOMAIN = "pakket_tracker"
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 
 # Config entry data (IMAP-account)
 CONF_IMAP_SERVER = "imap_server"
@@ -19,13 +19,17 @@ CONF_SCAN_WINDOW_DAYS = "scan_window_days"
 CONF_CONFIRMATION_ENABLED = "confirmation_enabled"
 CONF_CONFIRMATION_TIME = "confirmation_time"
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_PRESET_VERSION = "preset_version"
 
 # Per-vervoerder velden
 CARRIER_NAME = "name"
 CARRIER_SENDERS = "senders"
+CARRIER_REGISTERED_SUBJECTS = "registered_subjects"
+CARRIER_TRANSIT_SUBJECTS = "transit_subjects"
 CARRIER_DELIVERING_SUBJECTS = "delivering_subjects"
 CARRIER_DELIVERED_SUBJECTS = "delivered_subjects"
 CARRIER_MISSED_SUBJECTS = "missed_subjects"
+CARRIER_TRACKING_PATTERNS = "tracking_patterns"
 
 DEFAULT_PORT = 993
 DEFAULT_FOLDER = "INBOX"
@@ -41,6 +45,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
+PRESET_VERSION = 2
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -52,42 +57,265 @@ SERVICE_CONFIRM_RECEIVED = "confirm_received"
 SERVICE_KEEP_PARCELS = "keep_parcels"
 ATTR_ENTRY_ID = "entry_id"
 
-# Vooraf ingevulde vervoerdersregels. Alle vijf zijn bevestigd met echte
-# voorbeeldmails (afzender + patroon in onderwerp en/of body).
+# Vooraf ingevulde vervoerdersregels. Afzenders worden exact gematcht; de
+# statusteksten mogen in onderwerp of body staan. Trackingregexen draaien pas
+# nadat de afzender bij de vervoerder past en veroorzaken daardoor geen brede
+# numerieke matches in gewone e-mail.
 PRESET_CARRIERS: dict[str, dict] = {
     "gls_nl": {
         CARRIER_NAME: "GLS NL",
         CARRIER_SENDERS: ["noreply@gls-netherlands.com"],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: [],
         CARRIER_DELIVERING_SUBJECTS: ["ontvang je jouw pakket"],
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
         CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_TRACKING_PATTERNS: [],
     },
     "dpd_nl": {
         CARRIER_NAME: "DPD NL",
-        CARRIER_SENDERS: ["notificaties@dpd.nl"],
-        CARRIER_DELIVERING_SUBJECTS: ["pakket wordt vandaag"],
-        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
-        CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_SENDERS: [
+            "notificaties@dpd.nl",
+            "noreply@dpd.nl",
+            "noreply@dpd.com",
+            "noreply@dpdgroup.nl",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg", "onderweg naar jou"],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "pakket wordt vandaag",
+            "bezorging vandaag",
+            "wordt vandaag bezorgd",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd", "afgeleverd", "delivered"],
+        CARRIER_MISSED_SUBJECTS: ["niet bezorgd", "delivery exception"],
+        CARRIER_TRACKING_PATTERNS: [r"\b(\d{14})\b"],
     },
     "amazon_nl": {
         CARRIER_NAME: "Amazon.nl",
         CARRIER_SENDERS: ["verzending-volgen@amazon.nl", "update-bestelling@amazon.nl"],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: [],
         CARRIER_DELIVERING_SUBJECTS: ["onderweg voor bezorging"],
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
         CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_TRACKING_PATTERNS: [],
     },
     "postnl": {
         CARRIER_NAME: "PostNL",
-        CARRIER_SENDERS: ["notificatie@edm.postnl.nl"],
-        CARRIER_DELIVERING_SUBJECTS: ["bezorging staat gepland"],
-        CARRIER_DELIVERED_SUBJECTS: ["afgeleverd"],
-        CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_SENDERS: [
+            "notificatie@edm.postnl.nl",
+            "noreply@notificatie.postnl.nl",
+            "noreply@postnl.nl",
+            "info@postnl.nl",
+            "noreply@mypostnl.nl",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: ["je pakket is onderweg"],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "bezorging staat gepland",
+            "wordt bezorgd",
+            "bezorging vandaag",
+            "verwacht tussen",
+            "bezorger onderweg",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "afgeleverd",
+            "je pakket is bezorgd",
+            "is bezorgd",
+            "pakket bezorgd",
+        ],
+        CARRIER_MISSED_SUBJECTS: ["we hebben je gemist", "niet bezorgd"],
+        CARRIER_TRACKING_PATTERNS: [r"\b(3S[A-Z0-9]{10,18})\b"],
     },
     "dhl_parcel_nl": {
         CARRIER_NAME: "DHL Parcel NL",
-        CARRIER_SENDERS: ["noreply@dhlecommerce.nl"],
-        CARRIER_DELIVERING_SUBJECTS: ["voor de deur"],
-        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
-        CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_SENDERS: [
+            "noreply@dhlecommerce.nl",
+            "noreply@dhl.nl",
+            "donotreply_odd@dhl.com",
+            "noreply@dhl.de",
+            "no-reply@dhl.de",
+            "support@dhl.com",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg"],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "voor de deur",
+            "bezorging vandaag",
+            "komt vandaag",
+            "out with courier for delivery",
+            "scheduled for delivery today",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "is bezorgd",
+            "pakket is afgeleverd",
+            "has been delivered",
+            "wurde zugestellt",
+            "sendung zugestellt",
+        ],
+        CARRIER_MISSED_SUBJECTS: ["niet bezorgd", "delivery exception"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"\b(JJD\d{14,25})\b",
+            r"\b(JVGL[A-Z0-9]{8,30})\b",
+        ],
+    },
+    "bolcom": {
+        CARRIER_NAME: "bol.com",
+        CARRIER_SENDERS: [
+            "noreply@bol.com",
+            "service@bol.com",
+            "automail@bol.com",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: [
+            "verzonden",
+            "onderweg",
+            "meegegeven met",
+            "bij postnl",
+            "bij dhl",
+        ],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "wordt bezorgd",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: ["bezorgd", "afgeleverd", "delivered"],
+        CARRIER_MISSED_SUBJECTS: ["niet bezorgd", "bezorging gemist"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"\b(3S[A-Z0-9]{10,18})\b",
+            r"\b(JJD\d{14,25})\b",
+            r"\b(\d{14})\b",
+        ],
+    },
+    "aliexpress": {
+        CARRIER_NAME: "AliExpress",
+        CARRIER_SENDERS: [
+            "promotion@aliexpress.com",
+            "transaction@notice.aliexpress.com",
+            "chocieservice@aliexpress.com",
+            "aebuyersservices@aliexpress.com",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: [
+            "package is on the way",
+            "your package is on the way",
+            "sendung ist unterwegs",
+            "sendung wird versandt",
+        ],
+        CARRIER_DELIVERING_SUBJECTS: [],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "package delivered",
+            "your package has been delivered",
+            "sendung zugestellt",
+        ],
+        CARRIER_MISSED_SUBJECTS: ["delivery failed", "delivery exception"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"\b([A-Z]{2}\d{9}[A-Z]{2})\b",
+            r"\b(\d{13})\b",
+            r"\b(\d{20})\b",
+        ],
+    },
+    "usps": {
+        CARRIER_NAME: "USPS",
+        CARRIER_SENDERS: [
+            "auto-reply@usps.com",
+            "auto-reply@tracking.usps.com",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: ["expected delivery on", "expected delivery by"],
+        CARRIER_DELIVERING_SUBJECTS: ["out for delivery"],
+        CARRIER_DELIVERED_SUBJECTS: ["item delivered"],
+        CARRIER_MISSED_SUBJECTS: ["delivery exception"],
+        CARRIER_TRACKING_PATTERNS: [r"\b(9[2345]\d{15,26})\b"],
+    },
+    "ups": {
+        CARRIER_NAME: "UPS",
+        CARRIER_SENDERS: ["mcinfo@ups.com", "pkginfo@ups.com"],
+        CARRIER_REGISTERED_SUBJECTS: ["ups ship notification"],
+        CARRIER_TRANSIT_SUBJECTS: [],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "scheduled for delivery today",
+            "follow your delivery on a live map",
+            "driver is arriving soon",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "ups package was delivered",
+            "ups packages were delivered",
+            "ups parcel was delivered",
+            "paket wurde zugestellt",
+        ],
+        CARRIER_MISSED_SUBJECTS: [
+            "new scheduled delivery date",
+            "delivery exception",
+        ],
+        CARRIER_TRACKING_PATTERNS: [r"\b(1Z[0-9A-Z]{16})\b"],
+    },
+    "fedex": {
+        CARRIER_NAME: "FedEx",
+        CARRIER_SENDERS: [
+            "trackingupdates@fedex.com",
+            "fedexcanada@fedex.com",
+            "noreply@fedex.com",
+        ],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: ["shipment is on the way"],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "delivery scheduled for today",
+            "scheduled for delivery today",
+            "out for delivery",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "package has been delivered",
+            "packages have been delivered",
+            "shipment was delivered",
+        ],
+        CARRIER_MISSED_SUBJECTS: ["fedex delivery exception"],
+        CARRIER_TRACKING_PATTERNS: [r"\b(\d{12,20})\b"],
+    },
+    "trunkrs": {
+        CARRIER_NAME: "Trunkrs",
+        CARRIER_SENDERS: ["noreply@trunkrs.nl"],
+        CARRIER_REGISTERED_SUBJECTS: [
+            "bevestiging aanmelding pakket",
+            "is aangemeld",
+            "pakket nog niet fysiek ontvangen",
+        ],
+        CARRIER_TRANSIT_SUBJECTS: [
+            "bevestiging in sorteercentrum",
+            "aangekomen in ons sorteercentrum",
+        ],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "vandaag voor de deur",
+            "bezorger is onderweg",
+            "onderweg voor bezorging",
+            "levering vandaag",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd", "afgeleverd"],
+        CARRIER_MISSED_SUBJECTS: [
+            "niet kunnen bezorgen",
+            "bezorging mislukt",
+            "we hebben je gemist",
+        ],
+        CARRIER_TRACKING_PATTERNS: [r"\b(\d{9})\b"],
+    },
+    "budbee": {
+        CARRIER_NAME: "Budbee",
+        CARRIER_SENDERS: ["no-reply@budbee.com"],
+        CARRIER_REGISTERED_SUBJECTS: [],
+        CARRIER_TRANSIT_SUBJECTS: [],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "vandaag bezorgd",
+            "wordt vanavond bezorgd",
+            "komen langs tussen",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: [
+            "is bezorgd",
+            "succesvol bezorgd",
+            "afgeleverd",
+        ],
+        CARRIER_MISSED_SUBJECTS: [
+            "niet kunnen bezorgen",
+            "bezorging mislukt",
+        ],
+        CARRIER_TRACKING_PATTERNS: [],
     },
 }

@@ -1,5 +1,8 @@
 """Pakket Tracker NL -- eigen IMAP-gebaseerde pakkettracker voor NL vervoerders."""
+
 from __future__ import annotations
+
+from copy import deepcopy
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall
@@ -8,11 +11,22 @@ from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
     ATTR_ENTRY_ID,
+    CARRIER_DELIVERED_SUBJECTS,
+    CARRIER_DELIVERING_SUBJECTS,
+    CARRIER_MISSED_SUBJECTS,
+    CARRIER_REGISTERED_SUBJECTS,
+    CARRIER_SENDERS,
+    CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRANSIT_SUBJECTS,
+    CONF_CARRIERS,
     CONF_CONFIRMATION_ENABLED,
     CONF_CONFIRMATION_TIME,
+    CONF_PRESET_VERSION,
     DEFAULT_CONFIRMATION_ENABLED,
     DEFAULT_CONFIRMATION_TIME,
     DOMAIN,
+    PRESET_CARRIERS,
+    PRESET_VERSION,
     SERVICE_CONFIRM_RECEIVED,
     SERVICE_KEEP_PARCELS,
 )
@@ -20,6 +34,43 @@ from .coordinator import PakketTrackerCoordinator
 
 PLATFORMS: list[str] = ["sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+_MERGED_CARRIER_LIST_FIELDS = (
+    CARRIER_SENDERS,
+    CARRIER_REGISTERED_SUBJECTS,
+    CARRIER_TRANSIT_SUBJECTS,
+    CARRIER_DELIVERING_SUBJECTS,
+    CARRIER_DELIVERED_SUBJECTS,
+    CARRIER_MISSED_SUBJECTS,
+    CARRIER_TRACKING_PATTERNS,
+)
+
+
+def _upgrade_preset_options(options: dict) -> dict | None:
+    """Voeg nieuwe presetregels één keer toe zonder gebruikersnamen te wijzigen."""
+    try:
+        installed_version = int(options.get(CONF_PRESET_VERSION, 1))
+    except (TypeError, ValueError):
+        installed_version = 1
+    if installed_version >= PRESET_VERSION:
+        return None
+
+    upgraded = deepcopy(options)
+    carriers = deepcopy(dict(upgraded.get(CONF_CARRIERS, {})))
+    for carrier_id, preset in PRESET_CARRIERS.items():
+        if carrier_id not in carriers:
+            carriers[carrier_id] = deepcopy(preset)
+            continue
+        carrier = carriers[carrier_id]
+        for field in _MERGED_CARRIER_LIST_FIELDS:
+            existing = list(carrier.get(field, []))
+            carrier[field] = existing + [
+                value for value in preset.get(field, []) if value not in existing
+            ]
+
+    upgraded[CONF_CARRIERS] = carriers
+    upgraded[CONF_PRESET_VERSION] = PRESET_VERSION
+    return upgraded
 
 
 def _parse_confirmation_time(value: str) -> tuple[int, int, int]:
@@ -65,6 +116,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Zet een config entry op zonder de HA-opstart op IMAP te laten wachten."""
+    if (upgraded_options := _upgrade_preset_options(dict(entry.options))) is not None:
+        hass.config_entries.async_update_entry(entry, options=upgraded_options)
+
     coordinator = PakketTrackerCoordinator(hass, entry)
 
     hass.data.setdefault(DOMAIN, {})
@@ -82,9 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hour, minute, second = 22, 0, 0
 
     async def _daily_confirmation(_now) -> None:
-        if entry.options.get(
-            CONF_CONFIRMATION_ENABLED, DEFAULT_CONFIRMATION_ENABLED
-        ):
+        if entry.options.get(CONF_CONFIRMATION_ENABLED, DEFAULT_CONFIRMATION_ENABLED):
             await coordinator.async_send_confirmation_notification()
 
     entry.async_on_unload(
@@ -105,13 +157,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
     entry.async_on_unload(
-        hass.bus.async_listen(
-            "mobile_app_notification_action", _notification_action
-        )
+        hass.bus.async_listen("mobile_app_notification_action", _notification_action)
     )
 
     # Een trage of onbereikbare mailbox mag de startup-fase niet blokkeren.
-    hass.async_create_task(coordinator.async_refresh())
+    entry.async_create_background_task(
+        hass,
+        coordinator.async_refresh(),
+        f"{DOMAIN}_initial_refresh",
+    )
     return True
 
 

@@ -9,9 +9,11 @@ Vereist Home Assistant 2025.1 of nieuwer.
 
 ## Mogelijkheden
 
-- Ingebouwde regels voor PostNL, DHL Parcel NL, DPD NL, GLS NL en Amazon.nl.
+- Ingebouwde regels voor PostNL, DHL Parcel NL, DPD NL, GLS NL, Amazon.nl,
+  bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee.
 - Exacte controle van het afzenderadres om valse positieven te beperken.
 - Instelbare statusteksten voor onderweg, bezorgd en gemiste bezorging.
+- Vervoerder-specifieke trackingcodepatronen voor betrouwbare deduplicatie.
 - Zelf een vervoerder toevoegen via naam, afzenderadres en mailteksten.
 - IMAP UID-cache: alleen nieuwe mails worden opnieuw opgehaald.
 - Canoniek pakketoverzicht met deduplicatie op trackingcode.
@@ -20,6 +22,10 @@ Vereist Home Assistant 2025.1 of nieuwer.
 - Dagelijkse actionable notification met de vraag of alles ontvangen is.
 - Herstelde sensorwaarden tijdens Home Assistant-start en niet-blokkerende
   mailboxscan.
+
+Bij een upgrade worden nieuwe ingebouwde vervoerders eenmalig toegevoegd aan
+bestaande configuraties. Eigen namen en regels blijven behouden. Een
+vervoerder die daarna bewust wordt verwijderd, wordt niet opnieuw aangemaakt.
 
 ## Installatie via HACS
 
@@ -47,8 +53,10 @@ bijvoorbeeld `notify.mobile_app_mijn_telefoon`.
 
 ## Sensoren en services
 
-Per vervoerder worden tellers aangemaakt voor `delivering`, `delivered`,
-`packages` en `missed`. Daarnaast zijn er centrale sensoren voor actieve
+Per vervoerder worden tellers aangemaakt voor `registered`, `transit`,
+`delivering`, `delivered`, `packages` en `missed`. Hierdoor wordt een vooraf
+aangemeld pakket niet ten onrechte als vandaag onderweg gemeld. Daarnaast zijn
+er centrale sensoren voor actieve
 pakketten, vandaag onderweg, onbevestigd bezorgd, problemen en totaal open.
 De attribuutlijst `parcels` staat alleen op de centrale totaalsensor.
 
