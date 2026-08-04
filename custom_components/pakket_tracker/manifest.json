@@ -4,8 +4,8 @@
   "codeowners": ["@Dennisd80"],
   "config_flow": true,
   "documentation": "https://github.com/Dennisd80/ha-pakket-tracker",
-  "iot_class": "cloud_polling",
   "integration_type": "service",
+  "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Dennisd80/ha-pakket-tracker/issues",
   "requirements": [],
   "version": "0.3.1"

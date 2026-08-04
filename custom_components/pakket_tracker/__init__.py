@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
@@ -18,6 +19,7 @@ from .const import (
 from .coordinator import PakketTrackerCoordinator
 
 PLATFORMS: list[str] = ["sensor"]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 def _parse_confirmation_time(value: str) -> tuple[int, int, int]:
