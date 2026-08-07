@@ -7,7 +7,7 @@ worden gegroepeerd onder één device in de HA-UI.
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import RestoreSensor
+from homeassistant.components.sensor import RestoreSensor, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -83,6 +83,7 @@ class PakketTrackerSensor(CoordinatorEntity, RestoreSensor):
     """Eén statistiek (delivering/delivered/packages/missed) van één vervoerder."""
 
     _attr_native_unit_of_measurement = "package(s)"
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,
@@ -147,6 +148,7 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
     """Eén centrale sensor over mail- en directe vervoerderbronnen."""
 
     _attr_native_unit_of_measurement = "package(s)"
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,

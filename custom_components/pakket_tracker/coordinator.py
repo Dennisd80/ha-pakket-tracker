@@ -60,6 +60,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _MAX_BODY_CHARS = 100_000
 _UIDVALIDITY_RE = re.compile(rb"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
+_MESSAGE_ID_RE = re.compile(r"<[^<>]+>")
+_CACHE_PARSER_VERSION = 2
 
 # Veelgebruikte Nederlandse en internationale trackingformaten plus generieke
 # labels. Alleen voldoende lange waarden worden geaccepteerd om orderwoorden en
@@ -98,6 +100,23 @@ def _decode(value: str | None) -> str:
         else:
             decoded.append(text)
     return "".join(decoded)
+
+
+def _first_message_id(value: str | None) -> str | None:
+    """Geef de eerste genormaliseerde Message-ID uit een mailheader terug."""
+    decoded = _decode(value).strip().casefold()
+    if not decoded:
+        return None
+    if matches := _MESSAGE_ID_RE.findall(decoded):
+        return matches[0]
+    return decoded.split()[0]
+
+
+def _normalize_code(value: str | None) -> str | None:
+    """Normaliseer barcodes voor extractie, deduplicatie en tombstones."""
+    if not value:
+        return None
+    return re.sub(r"[\s-]", "", str(value)).upper() or None
 
 
 def _strip_html(value: str) -> str:
@@ -168,12 +187,19 @@ def _parse_message(uid: str, raw_message: bytes) -> dict[str, Any]:
             if address
         }
     )
+    message_id = _first_message_id(message.get("Message-ID"))
+    thread_id = (
+        _first_message_id(message.get("References"))
+        or _first_message_id(message.get("In-Reply-To"))
+        or message_id
+    )
     return {
         "uid": uid,
         "senders": addresses,
         "subject": _decode(message.get("Subject", "")).casefold(),
         "body": _get_body_text(message).casefold(),
-        "message_id": _decode(message.get("Message-ID", "")).strip().casefold(),
+        "message_id": message_id,
+        "thread_id": thread_id,
         "timestamp": _message_timestamp(message),
     }
 
@@ -219,6 +245,10 @@ def _fetch_recent_emails(
 
         uidvalidity = _get_uidvalidity(connection, folder)
         cached_messages = cache.get("messages", {})
+        if cache.get("parser_version") != _CACHE_PARSER_VERSION:
+            # Nieuwe parservelden vereisen een eenmalige refetch. Bevestigde
+            # pakketten blijven buiten deze berichtcache behouden.
+            cached_messages = {}
         if cache.get("uidvalidity") != uidvalidity or not isinstance(
             cached_messages, dict
         ):
@@ -262,6 +292,7 @@ def _fetch_recent_emails(
             fetched += 1
 
         new_cache = {
+            "parser_version": _CACHE_PARSER_VERSION,
             "uidvalidity": uidvalidity,
             "messages": current_messages,
             "confirmed": cache.get("confirmed", {}),
@@ -301,11 +332,11 @@ def _extract_tracking_code(
             continue
         if match:
             value = match.group(1) if match.lastindex else match.group(0)
-            return re.sub(r"[\s-]", "", value).upper()
+            return _normalize_code(value)
 
     for pattern in _TRACKING_PATTERNS:
         if match := pattern.search(text):
-            return match.group(1).upper().replace("-", "")
+            return _normalize_code(match.group(1))
     return None
 
 
@@ -374,9 +405,17 @@ def _classify_messages(
                 if message_id
                 else None
             )
+            thread_id = message.get("thread_id")
+            thread_fingerprint = (
+                hashlib.sha256(thread_id.encode("utf-8")).hexdigest()[:16]
+                if thread_id
+                else None
+            )
             package_key = (
                 f"tracking:{tracking_code}"
                 if tracking_code
+                else f"thread:{thread_fingerprint}"
+                if thread_fingerprint
                 else f"message:{message_fingerprint}"
                 if message_fingerprint
                 else f"uid:{message.get('uid')}"
@@ -573,7 +612,12 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             except (TypeError, ValueError):
                 continue
             if timestamp >= cutoff:
-                retained[parcel_id] = confirmed_at
+                normalized_id = parcel_id
+                if parcel_id.startswith("barcode:"):
+                    barcode = _normalize_code(parcel_id.removeprefix("barcode:"))
+                    if barcode:
+                        normalized_id = f"barcode:{barcode}"
+                retained[normalized_id] = confirmed_at
         self._cache["confirmed"] = retained
 
     def _direct_parcels(self) -> list[dict[str, Any]]:
@@ -603,7 +647,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                     continue
                 parcel = dict(raw_parcel)
                 carrier = str(parcel.get("carrier") or "Onbekend")
-                barcode = str(parcel.get("barcode") or "").strip().upper()
+                barcode = _normalize_code(parcel.get("barcode"))
                 fallback = hashlib.sha256(
                     repr(sorted(parcel.items())).encode("utf-8")
                 ).hexdigest()[:16]
@@ -612,7 +656,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                     {
                         "id": parcel_id,
                         "carrier_id": carrier.casefold().replace(" ", "_"),
-                        "barcode": barcode or None,
+                        "barcode": barcode,
                         "source": "parcel_aggregator",
                     }
                 )
@@ -628,12 +672,12 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             if carrier_id == SUMMARY_KEY:
                 continue
             for parcel in values.get("parcels", []):
-                barcode = str(parcel.get("barcode") or "").upper()
+                barcode = _normalize_code(parcel.get("barcode"))
                 dedupe_key = f"barcode:{barcode}" if barcode else parcel["id"]
                 merged[dedupe_key] = parcel
 
         for parcel in self._direct_parcels():
-            barcode = str(parcel.get("barcode") or "").upper()
+            barcode = _normalize_code(parcel.get("barcode"))
             if parcel["id"] in confirmed_ids or (
                 barcode and f"barcode:{barcode}" in confirmed_ids
             ):
@@ -687,7 +731,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         for parcel in parcels:
             if parcel_id := parcel.get("id"):
                 confirmed[parcel_id] = now
-            if barcode := str(parcel.get("barcode") or "").strip().upper():
+            if barcode := _normalize_code(parcel.get("barcode")):
                 confirmed[f"barcode:{barcode}"] = now
         await self._store.async_save(self._cache)
         await self.async_request_refresh()

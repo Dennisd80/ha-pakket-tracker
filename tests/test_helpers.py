@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 import pytest
+from homeassistant.components.sensor import SensorStateClass
 
 from custom_components.pakket_tracker import (
     _parse_confirmation_time,
@@ -14,7 +15,9 @@ from custom_components.pakket_tracker.const import (
     CARRIER_DELIVERING_SUBJECTS,
     CARRIER_MISSED_SUBJECTS,
     CARRIER_NAME,
+    CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
+    CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_PRESET_VERSION,
     PRESET_CARRIERS,
@@ -23,7 +26,13 @@ from custom_components.pakket_tracker.const import (
 from custom_components.pakket_tracker.coordinator import (
     _classify_messages,
     _extract_tracking_code,
+    _normalize_code,
+    _parse_message,
     _sender_matches,
+)
+from custom_components.pakket_tracker.sensor import (
+    PakketTrackerSensor,
+    PakketTrackerSummarySensor,
 )
 
 
@@ -33,6 +42,11 @@ from custom_components.pakket_tracker.coordinator import (
 )
 def test_parse_confirmation_time(value, expected):
     assert _parse_confirmation_time(value) == expected
+
+
+def test_count_sensors_enable_measurement_statistics():
+    assert PakketTrackerSensor._attr_state_class is SensorStateClass.MEASUREMENT
+    assert PakketTrackerSummarySensor._attr_state_class is SensorStateClass.MEASUREMENT
 
 
 @pytest.mark.parametrize("value", ["", "24:00", "12:60", "12", "12:00:00:00"])
@@ -50,6 +64,32 @@ def test_sender_matching_is_exact_and_supports_domains():
 def test_extract_tracking_code():
     assert _extract_tracking_code("Je barcode is 3SABCDEFGHIJKL") == "3SABCDEFGHIJKL"
     assert _extract_tracking_code("Je afspraak is op 20260804") is None
+
+
+def test_tracking_code_normalization_removes_spaces_and_hyphens():
+    assert _normalize_code(" 3s-abc 123 ") == "3SABC123"
+    assert (
+        _extract_tracking_code(
+            "barcode: 3s-abc 123",
+            [r"barcode:\s*([a-z0-9 -]{8,})"],
+        )
+        == "3SABC123"
+    )
+
+
+def test_parse_message_uses_thread_root_from_references():
+    parsed = _parse_message(
+        "3",
+        b"From: pakket@example.com\r\n"
+        b"Subject: Bezorgd\r\n"
+        b"Message-ID: <third@example.com>\r\n"
+        b"References: <root@example.com> <second@example.com>\r\n"
+        b"In-Reply-To: <second@example.com>\r\n"
+        b"\r\nJe pakket is bezorgd.",
+    )
+
+    assert parsed["message_id"] == "<third@example.com>"
+    assert parsed["thread_id"] == "<root@example.com>"
 
 
 def test_tracking_regex_input_preserves_case_and_escapes():
@@ -249,3 +289,36 @@ def test_classification_prefers_latest_status_for_tracking_code():
     assert result["voorbeeld"]["packages"] == 1
     assert result["voorbeeld"]["delivered"] == 1
     assert result["voorbeeld"]["delivering"] == 0
+
+
+def test_threaded_status_messages_without_barcode_form_one_package():
+    carriers = {
+        "voorbeeld": {
+            CARRIER_NAME: "Voorbeeld",
+            CARRIER_SENDERS: ["pakket@example.com"],
+            CARRIER_REGISTERED_SUBJECTS: ["aangemeld"],
+            CARRIER_TRANSIT_SUBJECTS: ["onderweg"],
+            CARRIER_DELIVERED_SUBJECTS: ["bezorgd"],
+        }
+    }
+    messages = [
+        {
+            "uid": str(index),
+            "senders": ["pakket@example.com"],
+            "subject": subject,
+            "body": "",
+            "message_id": f"<status-{index}@example.com>",
+            "thread_id": "<root@example.com>",
+            "timestamp": float(index),
+        }
+        for index, subject in enumerate(
+            ("pakket aangemeld", "pakket onderweg", "pakket bezorgd"), start=1
+        )
+    ]
+
+    result = _classify_messages(messages, carriers)["voorbeeld"]
+
+    assert result["packages"] == 1
+    assert result["registered"] == 0
+    assert result["transit"] == 0
+    assert result["delivered"] == 1
