@@ -1,6 +1,8 @@
 """Tests voor pure parsing- en classificatiehelpers."""
 
 from copy import deepcopy
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from homeassistant.components.sensor import SensorStateClass
@@ -45,8 +47,25 @@ def test_parse_confirmation_time(value, expected):
 
 
 def test_count_sensors_enable_measurement_statistics():
-    assert PakketTrackerSensor._attr_state_class is SensorStateClass.MEASUREMENT
-    assert PakketTrackerSummarySensor._attr_state_class is SensorStateClass.MEASUREMENT
+    coordinator = Mock()
+    entry = SimpleNamespace(entry_id="test-entry", data={})
+    carrier_sensor = PakketTrackerSensor(
+        coordinator,
+        entry,
+        "voorbeeld",
+        "Voorbeeld",
+        "packages",
+    )
+    summary_sensor = PakketTrackerSummarySensor(
+        coordinator,
+        entry,
+        "total",
+        "Pakket Tracker Totaal open",
+        "mdi:package",
+    )
+
+    assert carrier_sensor.state_class is SensorStateClass.MEASUREMENT
+    assert summary_sensor.state_class is SensorStateClass.MEASUREMENT
 
 
 @pytest.mark.parametrize("value", ["", "24:00", "12:60", "12", "12:00:00:00"])
