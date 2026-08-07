@@ -1,5 +1,6 @@
 """Tests voor pure parsing- en classificatiehelpers."""
 
+import datetime
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -31,6 +32,7 @@ from custom_components.pakket_tracker.coordinator import (
     _normalize_code,
     _parse_message,
     _sender_matches,
+    _threading_diagnostics,
 )
 from custom_components.pakket_tracker.sensor import (
     PakketTrackerSensor,
@@ -258,6 +260,34 @@ def test_budbee_evening_delivery_is_out_for_delivery():
     assert result["delivering"] == 1
 
 
+def test_amazon_tomorrow_delivery_has_planned_local_date():
+    mail_time = datetime.datetime(
+        2026, 8, 7, 21, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=2))
+    )
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["verzending-volgen@amazon.nl"],
+                "subject": "Je bestelling wordt morgen bezorgd",
+                "body": "Volg je bestelling wanneer deze onderweg voor bezorging is.",
+                "message_id": "amazon-tomorrow@example.com",
+                "timestamp": mail_time.timestamp(),
+            }
+        ],
+        {"amazon_nl": PRESET_CARRIERS["amazon_nl"]},
+        time_zone=mail_time.tzinfo,
+    )["amazon_nl"]
+
+    assert result["packages"] == 1
+    assert result["transit"] == 1
+    assert result["delivering"] == 0
+    assert result["parcels"][0]["planned_from"] == "2026-08-08T00:00:00+02:00"
+    assert result["parcels"][0]["planned_to"].startswith(
+        "2026-08-08T23:59:59.999999+02:00"
+    )
+
+
 def test_preset_upgrade_is_one_time_and_preserves_custom_values():
     postnl = deepcopy(PRESET_CARRIERS["postnl"])
     postnl[CARRIER_NAME] = "Mijn PostNL"
@@ -341,3 +371,42 @@ def test_threaded_status_messages_without_barcode_form_one_package():
     assert result["registered"] == 0
     assert result["transit"] == 0
     assert result["delivered"] == 1
+
+
+def test_threading_diagnostics_only_returns_aggregate_counts():
+    messages = [
+        {
+            "uid": "1",
+            "senders": ["pakket@example.com"],
+            "subject": "pakket onderweg",
+            "body": "barcode: 3SABCDEFGHIJKL",
+            "message_id": "<root@example.com>",
+            "thread_id": "<root@example.com>",
+        },
+        {
+            "uid": "2",
+            "senders": ["pakket@example.com"],
+            "subject": "pakket bezorgd",
+            "body": "barcode: 3SZYXWVUTSRQP",
+            "message_id": "<reply@example.com>",
+            "thread_id": "<root@example.com>",
+        },
+    ]
+    carriers = {
+        "voorbeeld": {
+            CARRIER_SENDERS: ["pakket@example.com"],
+            CARRIER_TRANSIT_SUBJECTS: ["onderweg"],
+            CARRIER_DELIVERED_SUBJECTS: ["bezorgd"],
+        }
+    }
+
+    result = _threading_diagnostics(messages, carriers)
+
+    assert result == {
+        "voorbeeld": {
+            "recognized_status_messages": 2,
+            "messages_with_thread_relation": 1,
+            "multi_message_thread_groups": 1,
+            "thread_groups_with_multiple_tracking_codes": 1,
+        }
+    }

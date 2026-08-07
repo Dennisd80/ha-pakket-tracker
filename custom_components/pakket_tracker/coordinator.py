@@ -25,6 +25,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CACHE_STORAGE_KEY,
@@ -117,6 +118,30 @@ def _normalize_code(value: str | None) -> str | None:
     if not value:
         return None
     return re.sub(r"[\s-]", "", str(value)).upper() or None
+
+
+def _planned_delivery_window(
+    haystack: str,
+    timestamp: float,
+    time_zone: datetime.tzinfo,
+) -> tuple[str | None, str | None]:
+    """Leid een geplande bezorgdag af uit relatieve tekst in de mail."""
+    if not timestamp:
+        return None, None
+    if "wordt morgen bezorgd" not in haystack:
+        return None, None
+
+    delivery_date = (
+        datetime.datetime.fromtimestamp(timestamp, tz=time_zone).date()
+        + datetime.timedelta(days=1)
+    )
+    planned_from = datetime.datetime.combine(
+        delivery_date, datetime.time.min, tzinfo=time_zone
+    )
+    planned_to = datetime.datetime.combine(
+        delivery_date, datetime.time.max, tzinfo=time_zone
+    )
+    return planned_from.isoformat(), planned_to.isoformat()
 
 
 def _strip_html(value: str) -> str:
@@ -344,6 +369,7 @@ def _classify_messages(
     messages: list[dict[str, Any]],
     carriers: dict[str, dict[str, Any]],
     confirmed_ids: set[str] | None = None,
+    time_zone: datetime.tzinfo = datetime.UTC,
 ) -> dict[str, dict[str, Any]]:
     """Classificeer mails en dedupliceer waar een pakketcode beschikbaar is."""
     result: dict[str, dict[str, Any]] = {}
@@ -380,18 +406,25 @@ def _classify_messages(
             haystack = f"{message.get('subject', '')} {message.get('body', '')}"
 
             # Een status is exclusief. De zwaarste/eindstatus wint als één mail
-            # door generieke teksten meer dan één patroon bevat.
+            # door generieke teksten meer dan één patroon bevat. Een expliciete
+            # afspraak voor morgen blijft wel transit: zulke Amazon-mails kunnen
+            # daarnaast algemene tekst over "onderweg voor bezorging" bevatten.
             status: str | None = None
-            for candidate in (
-                "missed",
-                "delivered",
-                "delivering",
-                "transit",
-                "registered",
+            if "wordt morgen bezorgd" in haystack and any(
+                pattern in haystack for pattern in patterns["transit"]
             ):
-                if any(pattern in haystack for pattern in patterns[candidate]):
-                    status = candidate
-                    break
+                status = "transit"
+            else:
+                for candidate in (
+                    "missed",
+                    "delivered",
+                    "delivering",
+                    "transit",
+                    "registered",
+                ):
+                    if any(pattern in haystack for pattern in patterns[candidate]):
+                        status = candidate
+                        break
             if status is None:
                 continue
 
@@ -425,6 +458,9 @@ def _classify_messages(
                 float(message.get("timestamp") or 0),
                 int(message.get("uid") or 0),
             )
+            planned_from, planned_to = _planned_delivery_window(
+                haystack, sort_key[0], time_zone
+            )
             previous = packages.get(package_key)
             if previous is None or sort_key >= previous["sort_key"]:
                 packages[package_key] = {
@@ -432,6 +468,8 @@ def _classify_messages(
                     "status": status,
                     "tracking_code": tracking_code,
                     "sort_key": sort_key,
+                    "planned_from": planned_from,
+                    "planned_to": planned_to,
                     "last_seen": (
                         datetime.datetime.fromtimestamp(
                             sort_key[0], tz=datetime.UTC
@@ -492,8 +530,8 @@ def _classify_messages(
                     "delivered_at": (
                         package["last_seen"] if status == "delivered" else None
                     ),
-                    "planned_from": None,
-                    "planned_to": None,
+                    "planned_from": package["planned_from"],
+                    "planned_to": package["planned_to"],
                     "pickup": False,
                     "pickup_point": None,
                     "url": None,
@@ -511,6 +549,63 @@ def _classify_messages(
     return result
 
 
+def _threading_diagnostics(
+    messages: list[dict[str, Any]], carriers: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, int]]:
+    """Tel threadingkenmerken van pakketmails zonder mailgegevens te tonen."""
+    diagnostics: dict[str, dict[str, int]] = {}
+    status_keys = (
+        CARRIER_REGISTERED_SUBJECTS,
+        CARRIER_TRANSIT_SUBJECTS,
+        CARRIER_DELIVERING_SUBJECTS,
+        CARRIER_DELIVERED_SUBJECTS,
+        CARRIER_MISSED_SUBJECTS,
+    )
+    for carrier_id, rule in carriers.items():
+        senders = [str(value).casefold() for value in rule.get(CARRIER_SENDERS, [])]
+        patterns = [
+            str(pattern).casefold()
+            for key in status_keys
+            for pattern in rule.get(key, [])
+        ]
+        custom_tracking_patterns = [
+            str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])
+        ]
+        recognized = 0
+        explicitly_threaded = 0
+        thread_groups: dict[str, list[str | None]] = {}
+        for message in messages:
+            if not _sender_matches(senders, message.get("senders", [])):
+                continue
+            haystack = f"{message.get('subject', '')} {message.get('body', '')}"
+            if not any(pattern in haystack for pattern in patterns):
+                continue
+            recognized += 1
+            message_id = message.get("message_id")
+            thread_id = message.get("thread_id")
+            if thread_id and message_id and thread_id != message_id:
+                explicitly_threaded += 1
+            if thread_id:
+                thread_groups.setdefault(thread_id, []).append(
+                    _extract_tracking_code(haystack, custom_tracking_patterns)
+                )
+
+        multi_message_groups = [
+            codes for codes in thread_groups.values() if len(codes) > 1
+        ]
+        diagnostics[carrier_id] = {
+            "recognized_status_messages": recognized,
+            "messages_with_thread_relation": explicitly_threaded,
+            "multi_message_thread_groups": len(multi_message_groups),
+            "thread_groups_with_multiple_tracking_codes": sum(
+                1
+                for codes in multi_message_groups
+                if len({code for code in codes if code}) > 1
+            ),
+        }
+    return diagnostics
+
+
 class PakketTrackerCoordinator(DataUpdateCoordinator):
     """Haal mail op en match deze per vervoerder."""
 
@@ -523,6 +618,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         )
         self._cache: dict[str, Any] = {}
         self._cache_loaded = False
+        self.threading_diagnostics: dict[str, dict[str, int]] = {}
         interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
@@ -587,7 +683,11 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         carriers: dict[str, dict[str, Any]] = self.entry.options.get(CONF_CARRIERS, {})
         self._purge_old_confirmations()
         confirmed_ids = set(self._cache.get("confirmed", {}))
-        result = _classify_messages(messages, carriers, confirmed_ids)
+        time_zone = dt_util.get_time_zone(self.hass.config.time_zone) or datetime.UTC
+        self.threading_diagnostics = _threading_diagnostics(messages, carriers)
+        result = _classify_messages(
+            messages, carriers, confirmed_ids, time_zone=time_zone
+        )
         result[SUMMARY_KEY] = self._build_summary(result, confirmed_ids)
         return result
 

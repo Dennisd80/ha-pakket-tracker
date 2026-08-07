@@ -1,4 +1,5 @@
 """Veilige diagnostiek voor Pakket Tracker NL."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -43,5 +44,6 @@ async def async_get_config_entry_diagnostics(
                 len(cache_messages) if isinstance(cache_messages, dict) else 0
             ),
             "carrier_counts": carrier_counts,
+            "threading": coordinator.threading_diagnostics,
         },
     }
