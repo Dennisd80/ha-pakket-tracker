@@ -1,7 +1,7 @@
 """Constanten voor Pakket Tracker NL."""
 
 DOMAIN = "pakket_tracker"
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 
 # Config entry data (IMAP-account)
 CONF_IMAP_SERVER = "imap_server"
