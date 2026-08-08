@@ -1,5 +1,6 @@
 """Tests voor coordinator-integraties."""
 
+import pytest
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -13,7 +14,89 @@ from custom_components.pakket_tracker.const import (
 from custom_components.pakket_tracker.coordinator import (
     PakketTrackerCoordinator,
     _classify_messages,
+    _fetch_recent_emails,
 )
+
+
+class _FakeImap:
+    def __init__(self):
+        self.fetch_calls = []
+
+    def login(self, _username, _password):
+        return "OK", []
+
+    def select(self, _folder, readonly=True):
+        return "OK", []
+
+    def status(self, _folder, _query):
+        return "OK", [b"* STATUS INBOX (UIDVALIDITY 42)"]
+
+    def uid(self, command, *args):
+        if command == "search":
+            return "OK", [b"1 2"]
+        if command == "fetch":
+            self.fetch_calls.append(args)
+            if args[0] == "1,2":
+                return "OK", [
+                    (
+                        b"1 (UID 1 BODY[] {64})",
+                        b"From: a@example.com\r\nSubject: One\r\n\r\n",
+                    ),
+                    (
+                        b"2 (UID 2 BODY[] {64})",
+                        b"From: b@example.com\r\nSubject: Two\r\n\r\n",
+                    ),
+                ]
+        return "NO", []
+
+    def logout(self):
+        return "OK", []
+
+
+def test_fetch_recent_emails_uses_one_batch_fetch(monkeypatch):
+    fake = _FakeImap()
+    monkeypatch.setattr(
+        "custom_components.pakket_tracker.coordinator.imaplib.IMAP4_SSL",
+        lambda *args, **kwargs: fake,
+    )
+    data = {
+        "imap_server": "imap.example.com",
+        "imap_port": 993,
+        "imap_ssl": True,
+        "username": "user@example.com",
+        "password": "secret",
+        "folder": "INBOX",
+        "scan_window_days": 2,
+    }
+
+    messages, _cache, fetched = _fetch_recent_emails(data, {})
+
+    assert fetched == 2
+    assert len(messages) == 2
+    assert [call[0] for call in fake.fetch_calls] == ["1,2"]
+
+
+@pytest.mark.asyncio
+async def test_scan_errors_raise_after_three_consecutive_failures(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = PakketTrackerCoordinator(hass, entry)
+    coordinator._cache_loaded = True
+    coordinator.data = {}
+
+    def fail_scan(*_args):
+        raise OSError("mailbox unavailable")
+
+    monkeypatch.setattr(
+        "custom_components.pakket_tracker.coordinator._fetch_recent_emails",
+        fail_scan,
+    )
+
+    await coordinator._async_update_data()
+    await coordinator._async_update_data()
+    with pytest.raises(Exception, match="IMAP-scan mislukt"):
+        await coordinator._async_update_data()
+    assert coordinator.consecutive_scan_failures == 3
+    assert coordinator.last_scan_error == "mailbox unavailable"
 
 
 def test_parcel_aggregator_entity_can_be_renamed(hass):
