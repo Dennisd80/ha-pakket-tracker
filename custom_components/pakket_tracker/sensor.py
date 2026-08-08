@@ -252,7 +252,7 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
         # in Recorder terechtkomen. De andere sensoren blijven lichte tellers.
         if self._summary_key == "total":
             attributes["parcels"] = summary.get("parcels", [])
-        attributes["delivery_statistics"] = summary.get("delivery_statistics", {})
+            attributes["delivery_statistics"] = summary.get("delivery_statistics", {})
         return attributes
 
     @property
