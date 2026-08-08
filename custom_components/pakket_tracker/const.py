@@ -300,7 +300,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             "we hebben je gemist",
         ],
         CARRIER_TRACKING_PATTERNS: [
-            r"(?:trunkrsnummer|zending|tracking|barcode)[^0-9]{0,24}(\d{9})\b"
+            r"(?:pakket|trunkrsnummer|zending|tracking|barcode)[^0-9]{0,24}(\d{9})\b"
         ],
     },
     "budbee": {
