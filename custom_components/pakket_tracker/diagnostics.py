@@ -23,7 +23,14 @@ async def async_get_config_entry_diagnostics(
         carrier_id: {
             key: value
             for key, value in values.items()
-            if key in {"delivering", "delivered", "packages", "missed"}
+            if key in {
+                "registered",
+                "transit",
+                "delivering",
+                "delivered",
+                "packages",
+                "missed",
+            }
         }
         for carrier_id, values in (coordinator.data or {}).items()
         if carrier_id != "_summary"
@@ -35,6 +42,9 @@ async def async_get_config_entry_diagnostics(
         },
         "coordinator": {
             "last_update_success": coordinator.last_update_success,
+            "consecutive_scan_failures": coordinator.consecutive_scan_failures,
+            "last_scan_error": coordinator.last_scan_error,
+            "last_successful_scan": coordinator.last_successful_scan,
             "last_exception": (
                 str(coordinator.last_exception)
                 if coordinator.last_exception is not None
