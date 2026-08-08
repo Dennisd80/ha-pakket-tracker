@@ -18,6 +18,7 @@ from datetime import timedelta
 from email.header import decode_header
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any
+from urllib.parse import quote
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -37,6 +38,7 @@ from .const import (
     CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
     CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRACKING_URL,
     CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_FOLDER,
@@ -46,6 +48,7 @@ from .const import (
     CONF_IMAP_TIMEOUT,
     CONF_NOTIFY_SERVICE,
     CONF_PASSWORD,
+    CONF_POSTAL_CODE,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_WINDOW_DAYS,
     CONF_USERNAME,
@@ -122,6 +125,31 @@ def _normalize_code(value: str | None) -> str | None:
     return re.sub(r"[\s-]", "", str(value)).upper() or None
 
 
+def _build_tracking_url(
+    code: str | None, rule: dict[str, Any], postal_code: str = ""
+) -> str | None:
+    """Vul een configureerbare vervoerder-URL zonder gevoelige data te loggen."""
+    template = str(rule.get(CARRIER_TRACKING_URL) or "").strip()
+    if not code or not template:
+        return None
+    try:
+        return template.format(
+            code=quote(code, safe=""),
+            postal_code=quote(postal_code.strip(), safe=""),
+        )
+    except (KeyError, ValueError):
+        _LOGGER.warning("Ongeldige tracking-URL-template overgeslagen")
+        return None
+
+
+def _timestamp_after(value: object, cutoff: datetime.datetime) -> bool:
+    try:
+        timestamp = datetime.datetime.fromisoformat(str(value))
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=datetime.UTC)
+    except (TypeError, ValueError):
+        return False
+    return timestamp >= cutoff
 def _planned_delivery_window(
     haystack: str,
     timestamp: float,
@@ -346,6 +374,7 @@ def _fetch_recent_emails(
             "uidvalidity": uidvalidity,
             "messages": current_messages,
             "confirmed": cache.get("confirmed", {}),
+            "delivery_events": cache.get("delivery_events", []),
         }
         messages = [current_messages[uid] for uid in uids if uid in current_messages]
         return messages, new_cache, fetched
@@ -438,6 +467,7 @@ def _classify_messages(
     carriers: dict[str, dict[str, Any]],
     confirmed_ids: set[str] | None = None,
     time_zone: datetime.tzinfo = datetime.UTC,
+    postal_code: str = "",
 ) -> dict[str, dict[str, Any]]:
     """Classificeer mails en dedupliceer waar een pakketcode beschikbaar is."""
     result: dict[str, dict[str, Any]] = {}
@@ -565,6 +595,9 @@ def _classify_messages(
                     "id": parcel_id,
                     "status": status,
                     "tracking_code": tracking_code,
+                    "tracking_url": _build_tracking_url(
+                        tracking_code, rule, postal_code
+                    ),
                     "sort_key": sort_key,
                     "planned_from": planned_from,
                     "planned_to": planned_to,
@@ -799,9 +832,14 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         time_zone = dt_util.get_time_zone(self.hass.config.time_zone) or datetime.UTC
         self.threading_diagnostics = _threading_diagnostics(messages, carriers)
         result = _classify_messages(
-            messages, carriers, confirmed_ids, time_zone=time_zone
+            messages,
+            carriers,
+            confirmed_ids,
+            time_zone=time_zone,
+            postal_code=self.entry.options.get(CONF_POSTAL_CODE, ""),
         )
         result[SUMMARY_KEY] = self._build_summary(result, confirmed_ids)
+        result[SUMMARY_KEY]["delivery_statistics"] = self._delivery_statistics()
         return result
 
     def _purge_old_confirmations(self) -> None:
@@ -832,6 +870,68 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                         normalized_id = f"barcode:{barcode}"
                 retained[normalized_id] = confirmed_at
         self._cache["confirmed"] = retained
+        events = self._cache.get("delivery_events", [])
+        if isinstance(events, list):
+            event_cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+                days=370
+            )
+            self._cache["delivery_events"] = [
+                event
+                for event in events
+                if isinstance(event, dict)
+                and str(event.get("timestamp", ""))
+                and _timestamp_after(event.get("timestamp"), event_cutoff)
+            ]
+    def _delivery_statistics(self) -> dict[str, dict[str, int]]:
+        """Bereken totaal/week/maand/jaar uit unieke bevestigingsevents."""
+        events = self._cache.get("delivery_events", [])
+        if not isinstance(events, list):
+            return {}
+        now = datetime.datetime.now(datetime.UTC)
+        start_week = now - datetime.timedelta(days=now.weekday())
+        start_week = start_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        start_year = now.replace(
+            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        stats: dict[str, dict[str, int]] = {}
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            carrier_id = str(event.get("carrier_id") or "unknown")
+            try:
+                timestamp = datetime.datetime.fromisoformat(str(event["timestamp"]))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=datetime.UTC)
+            except (KeyError, TypeError, ValueError):
+                continue
+            values = stats.setdefault(
+                carrier_id,
+                {
+                    "delivered_total": 0,
+                    "delivered_week": 0,
+                    "delivered_month": 0,
+                    "delivered_year": 0,
+                },
+            )
+            values["delivered_total"] += 1
+            if timestamp >= start_week:
+                values["delivered_week"] += 1
+            if timestamp >= start_month:
+                values["delivered_month"] += 1
+            if timestamp >= start_year:
+                values["delivered_year"] += 1
+        total = {
+            "delivered_total": 0,
+            "delivered_week": 0,
+            "delivered_month": 0,
+            "delivered_year": 0,
+        }
+        for values in stats.values():
+            for key in total:
+                total[key] += values[key]
+        stats["__all__"] = total
+        return stats
 
     def _direct_parcels(self) -> list[dict[str, Any]]:
         """Lees de canonieke parcel-lijsten van Parcel Aggregator indien aanwezig."""
@@ -868,6 +968,14 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                         "id": parcel_id,
                         "carrier_id": carrier.casefold().replace(" ", "_"),
                         "barcode": barcode,
+                        "tracking_url": parcel.get("tracking_url")
+                        or _build_tracking_url(
+                            barcode,
+                            self.entry.options.get(CONF_CARRIERS, {}).get(
+                                carrier.casefold().replace(" ", "_"), {}
+                            ),
+                            self.entry.options.get(CONF_POSTAL_CODE, ""),
+                        ),
                         "source": "parcel_aggregator",
                     }
                 )
@@ -912,6 +1020,27 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 or ""
             )
         )
+        stale_cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            hours=48
+        )
+        stale = 0
+        pickup = 0
+        for parcel in parcels:
+            if parcel.get("pickup") or parcel.get("status") == "at_pickup_point":
+                pickup += 1
+            try:
+                last_seen = datetime.datetime.fromisoformat(
+                    str(parcel.get("last_seen"))
+                )
+                if last_seen.tzinfo is None:
+                    last_seen = last_seen.replace(tzinfo=datetime.UTC)
+                if (
+                    parcel.get("status") not in {"delivered", "problem"}
+                    and last_seen < stale_cutoff
+                ):
+                    stale += 1
+            except (TypeError, ValueError):
+                continue
         return {
             "active": sum(
                 1 for parcel in parcels if parcel.get("status") in active_statuses
@@ -928,6 +1057,8 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 if parcel.get("status") in {"problem", "returning"}
             ),
             "total": len(parcels),
+            "stale": stale,
+            "pickup": pickup,
             "parcels": parcels,
         }
 
@@ -938,12 +1069,27 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         if not parcels:
             return 0
         confirmed = self._cache.setdefault("confirmed", {})
+        events = self._cache.setdefault("delivery_events", [])
+        if not isinstance(events, list):
+            events = []
+            self._cache["delivery_events"] = events
         now = datetime.datetime.now(datetime.UTC).isoformat()
         for parcel in parcels:
+            barcode = _normalize_code(parcel.get("barcode"))
+            event_id = f"barcode:{barcode}" if barcode else parcel.get("id")
+            already_confirmed = bool(event_id and event_id in confirmed)
             if parcel_id := parcel.get("id"):
                 confirmed[parcel_id] = now
-            if barcode := _normalize_code(parcel.get("barcode")):
+            if barcode:
                 confirmed[f"barcode:{barcode}"] = now
+            if event_id and not already_confirmed:
+                events.append(
+                    {
+                        "id": event_id,
+                        "carrier_id": parcel.get("carrier_id") or "unknown",
+                        "timestamp": now,
+                    }
+                )
         await self._store.async_save(self._cache)
         await self.async_request_refresh()
         return len(parcels)
@@ -976,6 +1122,14 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             f"{status.replace('_', ' ')}: {count}"
             for status, count in sorted(by_status.items())
         )
+        detail_lines = [
+            f"- {parcel.get('carrier') or 'Onbekend'}: "
+            f"{str(parcel.get('status') or 'onbekend').replace('_', ' ')}"
+            for parcel in parcels[:5]
+        ]
+        if len(parcels) > 5:
+            detail_lines.append(f"- en nog {len(parcels) - 5}")
+        detail_text = "\n".join(detail_lines)
         confirm_action = f"PAKKET_TRACKER_CONFIRM_{self.entry.entry_id}"
         keep_action = f"PAKKET_TRACKER_KEEP_{self.entry.entry_id}"
         await self.hass.services.async_call(
@@ -985,7 +1139,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 "title": "📦 Zijn alle pakketten ontvangen?",
                 "message": (
                     f"Er staan {len(parcels)} pakket(ten) open ({status_text}). "
-                    "Zijn alle verwachte bezorgingen binnen?"
+                    f"\n{detail_text}\nZijn alle verwachte bezorgingen binnen?"
                 ),
                 "data": {
                     "tag": f"pakket_tracker_confirmation_{self.entry.entry_id}",

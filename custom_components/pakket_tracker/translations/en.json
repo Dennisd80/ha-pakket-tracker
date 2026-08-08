@@ -50,7 +50,8 @@
           "transit_title": "In-transit/sorting text (optional)",
           "delivering_title": "Title text for out for delivery/today",
           "delivered_title": "Title text for delivered (optional)",
-          "missed_title": "Title text for missed delivery (optional)"
+          "missed_title": "Title text for missed delivery (optional)",
+          "tracking_url": "Track & Trace URL template (use {code})"
         }
       },
       "add_carrier": {
@@ -63,7 +64,8 @@
           "delivering_subjects": "Out-for-delivery patterns, one per line",
           "delivered_subjects": "Delivered patterns, one per line",
           "missed_subjects": "Missed-delivery patterns, one per line",
-          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)"
+          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)",
+          "tracking_url": "Track & Trace URL template (use {code} and optionally {postal_code})"
         }
       },
       "edit_carrier": {
@@ -79,7 +81,8 @@
           "delivering_subjects": "Out-for-delivery patterns, one per line",
           "delivered_subjects": "Delivered patterns, one per line",
           "missed_subjects": "Missed-delivery patterns, one per line",
-          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)"
+          "tracking_patterns": "Tracking-code regular expressions, one per line (optional)",
+          "tracking_url": "Track & Trace URL template (use {code} and optionally {postal_code})"
         }
       },
       "remove_carrier": {
@@ -95,6 +98,7 @@
           ,"confirmation_enabled": "Enable daily receipt confirmation"
           ,"confirmation_time": "Receipt confirmation time (HH:MM or HH:MM:SS)"
           ,"notify_service": "Phone notification service"
+          ,"postal_code": "Postal code for Track & Trace (optional)"
         }
       }
     },

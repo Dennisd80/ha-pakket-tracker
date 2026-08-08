@@ -1,7 +1,7 @@
 """Constanten voor Pakket Tracker NL."""
 
 DOMAIN = "pakket_tracker"
-VERSION = "0.4.2"
+VERSION = "0.5.0"
 
 # Config entry data (IMAP-account)
 CONF_IMAP_SERVER = "imap_server"
@@ -19,6 +19,7 @@ CONF_SCAN_WINDOW_DAYS = "scan_window_days"
 CONF_CONFIRMATION_ENABLED = "confirmation_enabled"
 CONF_CONFIRMATION_TIME = "confirmation_time"
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_POSTAL_CODE = "postal_code"
 CONF_PRESET_VERSION = "preset_version"
 
 # Per-vervoerder velden
@@ -30,6 +31,7 @@ CARRIER_DELIVERING_SUBJECTS = "delivering_subjects"
 CARRIER_DELIVERED_SUBJECTS = "delivered_subjects"
 CARRIER_MISSED_SUBJECTS = "missed_subjects"
 CARRIER_TRACKING_PATTERNS = "tracking_patterns"
+CARRIER_TRACKING_URL = "tracking_url"
 
 DEFAULT_PORT = 993
 DEFAULT_FOLDER = "INBOX"
@@ -45,7 +47,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
-PRESET_VERSION = 3
+PRESET_VERSION = 4
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -71,6 +73,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
         CARRIER_MISSED_SUBJECTS: [],
         CARRIER_TRACKING_PATTERNS: [],
+        CARRIER_TRACKING_URL: "https://gls-group.com/NL/nl/parcel-tracking?match={code}",
     },
     "dpd_nl": {
         CARRIER_NAME: "DPD NL",
@@ -92,6 +95,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_TRACKING_PATTERNS: [
             r"(?:pakket|zending|tracking|barcode)[^0-9]{0,24}(\d{14})\b"
         ],
+        CARRIER_TRACKING_URL: "https://tracking.dpd.nl/track-and-trace/{code}",
     },
     "amazon_nl": {
         CARRIER_NAME: "Amazon.nl",
@@ -102,6 +106,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
         CARRIER_MISSED_SUBJECTS: [],
         CARRIER_TRACKING_PATTERNS: [],
+        CARRIER_TRACKING_URL: "https://www.amazon.nl/gp/your-account/order-details?ie=UTF8&orderID={code}",
     },
     "postnl": {
         CARRIER_NAME: "PostNL",
@@ -129,6 +134,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         ],
         CARRIER_MISSED_SUBJECTS: ["we hebben je gemist", "niet bezorgd"],
         CARRIER_TRACKING_PATTERNS: [r"\b(3S[A-Z0-9]{10,18})\b"],
+        CARRIER_TRACKING_URL: "https://tracking.postnl.nl/track-and-trace/{code}",
     },
     "dhl_parcel_nl": {
         CARRIER_NAME: "DHL Parcel NL",
@@ -161,6 +167,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             r"\b(JJD\d{14,25})\b",
             r"\b(JVGL[A-Z0-9]{8,30})\b",
         ],
+        CARRIER_TRACKING_URL: "https://www.dhl.com/nl-nl/home/tracking.html?tracking-id={code}",
     },
     "bolcom": {
         CARRIER_NAME: "bol.com",
@@ -187,6 +194,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             r"\b(JJD\d{14,25})\b",
             r"(?:pakket|zending|tracking|barcode)[^0-9]{0,24}(\d{14})\b",
         ],
+        CARRIER_TRACKING_URL: "https://www.bol.com/nl/nl/track-and-trace/{code}/",
     },
     "aliexpress": {
         CARRIER_NAME: "AliExpress",
@@ -215,6 +223,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             r"\b(\d{13})\b",
             r"\b(\d{20})\b",
         ],
+        CARRIER_TRACKING_URL: "https://global.cainiao.com/detail.htm?mailNoList={code}",
     },
     "usps": {
         CARRIER_NAME: "USPS",
@@ -228,6 +237,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_DELIVERED_SUBJECTS: ["item delivered"],
         CARRIER_MISSED_SUBJECTS: ["delivery exception"],
         CARRIER_TRACKING_PATTERNS: [r"\b(9[2345]\d{15,26})\b"],
+        CARRIER_TRACKING_URL: "https://tools.usps.com/go/TrackConfirmAction?tLabels={code}",
     },
     "ups": {
         CARRIER_NAME: "UPS",
@@ -250,6 +260,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             "delivery exception",
         ],
         CARRIER_TRACKING_PATTERNS: [r"\b(1Z[0-9A-Z]{16})\b"],
+        CARRIER_TRACKING_URL: "https://www.ups.com/track?loc=nl_NL&tracknum={code}",
     },
     "fedex": {
         CARRIER_NAME: "FedEx",
@@ -274,6 +285,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_TRACKING_PATTERNS: [
             r"(?:tracking|shipment|package|barcode)[^0-9]{0,24}(\d{12,20})\b"
         ],
+        CARRIER_TRACKING_URL: "https://www.fedex.com/fedextrack/?trknbr={code}",
     },
     "trunkrs": {
         CARRIER_NAME: "Trunkrs",
@@ -303,6 +315,7 @@ PRESET_CARRIERS: dict[str, dict] = {
             r"(?:pakket|trunkrsnummer|zending|tracking|barcode|afgeleverd|"
             r"sorteercentrum|aanmelding|aangemeld|bezorgd)[^0-9]{0,24}(\d{9})\b"
         ],
+        CARRIER_TRACKING_URL: "https://trunkrs.nl/track-trace/?code={code}",
     },
     "budbee": {
         CARRIER_NAME: "Budbee",

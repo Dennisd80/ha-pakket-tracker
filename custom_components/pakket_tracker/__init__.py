@@ -17,6 +17,7 @@ from .const import (
     CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
     CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRACKING_URL,
     CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_CONFIRMATION_ENABLED,
@@ -67,6 +68,8 @@ def _upgrade_preset_options(options: dict) -> dict | None:
             carrier[field] = existing + [
                 value for value in preset.get(field, []) if value not in existing
             ]
+        if CARRIER_TRACKING_URL not in carrier and preset.get(CARRIER_TRACKING_URL):
+            carrier[CARRIER_TRACKING_URL] = preset[CARRIER_TRACKING_URL]
 
     upgraded[CONF_CARRIERS] = carriers
     upgraded[CONF_PRESET_VERSION] = PRESET_VERSION
