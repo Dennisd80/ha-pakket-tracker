@@ -32,6 +32,7 @@ from custom_components.pakket_tracker.coordinator import (
     _normalize_code,
     _parse_message,
     _sender_matches,
+    _stable_direct_parcel_key,
     _threading_diagnostics,
 )
 from custom_components.pakket_tracker.sensor import (
@@ -95,6 +96,28 @@ def test_tracking_code_normalization_removes_spaces_and_hyphens():
             [r"barcode:\s*([a-z0-9 -]{8,})"],
         )
         == "3SABC123"
+    )
+
+
+def test_broad_numeric_tracking_pattern_requires_context():
+    assert _extract_tracking_code(
+        "Order 123456789012 placed", [r"\b(\d{12})\b"]
+    ) is None
+    assert _extract_tracking_code(
+        "tracking number 123456789012", [r"\b(\d{12})\b"]
+    ) == "123456789012"
+
+
+def test_direct_parcel_fallback_ignores_status_changes():
+    base = {
+        "carrier": "Voorbeeld",
+        "sender": "Winkel",
+        "title": "Bestelling",
+        "status": "in_transit",
+    }
+    changed = {**base, "status": "delivered"}
+    assert _stable_direct_parcel_key(base, "Voorbeeld") == _stable_direct_parcel_key(
+        changed, "Voorbeeld"
     )
 
 
@@ -371,6 +394,41 @@ def test_threaded_status_messages_without_barcode_form_one_package():
     assert result["registered"] == 0
     assert result["transit"] == 0
     assert result["delivered"] == 1
+
+
+def test_thread_first_without_barcode_merges_with_later_barcode():
+    carriers = {
+        "voorbeeld": {
+            CARRIER_NAME: "Voorbeeld",
+            CARRIER_SENDERS: ["pakket@example.com"],
+            CARRIER_TRANSIT_SUBJECTS: ["onderweg"],
+            CARRIER_DELIVERED_SUBJECTS: ["bezorgd"],
+        }
+    }
+    messages = [
+        {
+            "uid": "1",
+            "senders": ["pakket@example.com"],
+            "subject": "pakket onderweg",
+            "body": "",
+            "message_id": "<first@example.com>",
+            "thread_id": "<root@example.com>",
+            "timestamp": 1.0,
+        },
+        {
+            "uid": "2",
+            "senders": ["pakket@example.com"],
+            "subject": "pakket bezorgd",
+            "body": "barcode: 3SABCDEFGHIJKL",
+            "message_id": "<second@example.com>",
+            "thread_id": "<root@example.com>",
+            "timestamp": 2.0,
+        },
+    ]
+    result = _classify_messages(messages, carriers)["voorbeeld"]
+    assert result["packages"] == 1
+    assert result["delivered"] == 1
+    assert result["tracking"]["delivered"] == ["3SABCDEFGHIJKL"]
 
 
 def test_threading_diagnostics_only_returns_aggregate_counts():

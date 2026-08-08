@@ -62,7 +62,9 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_BODY_CHARS = 100_000
 _UIDVALIDITY_RE = re.compile(rb"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
 _MESSAGE_ID_RE = re.compile(r"<[^<>]+>")
+_FETCH_UID_RE = re.compile(rb"\bUID\s+(\d+)", re.IGNORECASE)
 _CACHE_PARSER_VERSION = 2
+_MAX_CONSECUTIVE_SCAN_FAILURES = 3
 
 # Veelgebruikte Nederlandse en internationale trackingformaten plus generieke
 # labels. Alleen voldoende lange waarden worden geaccepteerd om orderwoorden en
@@ -291,30 +293,53 @@ def _fetch_recent_emails(
         current_messages: dict[str, dict[str, Any]] = {}
         fetched = 0
 
+        uncached = [uid for uid in uids if uid not in cached_messages]
         for uid in uids:
             if isinstance(cached_messages.get(uid), dict):
                 current_messages[uid] = cached_messages[uid]
-                continue
 
-            status, response = connection.uid("fetch", uid, "(BODY.PEEK[])")
-            if status != "OK" or not response:
-                _LOGGER.debug("IMAP UID %s kon niet worden opgehaald", uid)
-                continue
-
-            raw_message = next(
-                (
-                    item[1]
-                    for item in response
-                    if isinstance(item, tuple)
-                    and len(item) > 1
-                    and isinstance(item[1], bytes)
-                ),
-                None,
+        if uncached:
+            fetch_status, fetch_response = connection.uid(
+                "fetch", ",".join(uncached), "(UID BODY.PEEK[])"
             )
-            if raw_message is None:
-                continue
-            current_messages[uid] = _parse_message(uid, raw_message)
-            fetched += 1
+            fetched_messages: dict[str, bytes] = {}
+            if fetch_status == "OK":
+                for item in fetch_response or []:
+                    if not isinstance(item, tuple) or len(item) < 2:
+                        continue
+                    header, raw_message = item[0], item[1]
+                    if not isinstance(header, bytes) or not isinstance(
+                        raw_message, bytes
+                    ):
+                        continue
+                    match = _FETCH_UID_RE.search(header)
+                    if match:
+                        fetched_messages[match.group(1).decode("ascii")] = raw_message
+            # Some IMAP servers do not support a multi-UID FETCH. Keep a
+            # compatible per-UID fallback instead of losing new messages.
+            if len(fetched_messages) < len(uncached):
+                for uid in uncached:
+                    if uid in fetched_messages:
+                        continue
+                    status, response = connection.uid("fetch", uid, "(BODY.PEEK[])")
+                    if status != "OK" or not response:
+                        _LOGGER.debug("IMAP UID %s kon niet worden opgehaald", uid)
+                        continue
+                    raw_message = next(
+                        (
+                            item[1]
+                            for item in response
+                            if isinstance(item, tuple)
+                            and len(item) > 1
+                            and isinstance(item[1], bytes)
+                        ),
+                        None,
+                    )
+                    if isinstance(raw_message, bytes):
+                        fetched_messages[uid] = raw_message
+            for uid, raw_message in fetched_messages.items():
+                current_messages[uid] = _parse_message(uid, raw_message)
+                fetched += 1
 
         new_cache = {
             "parser_version": _CACHE_PARSER_VERSION,
@@ -357,12 +382,55 @@ def _extract_tracking_code(
             continue
         if match:
             value = match.group(1) if match.lastindex else match.group(0)
+            # Broad numeric custom patterns need a nearby tracking label. This
+            # prevents order numbers, dates and phone numbers becoming parcels.
+            if (
+                r"\d" in raw_pattern
+                and not re.search(
+                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                    raw_pattern,
+                    re.IGNORECASE,
+                )
+            ):
+                context = text[max(0, match.start() - 48) : match.start()]
+                if not re.search(
+                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                    context,
+                    re.IGNORECASE,
+                ):
+                    continue
             return _normalize_code(value)
 
     for pattern in _TRACKING_PATTERNS:
         if match := pattern.search(text):
             return _normalize_code(match.group(1))
     return None
+
+
+def _stable_direct_parcel_key(parcel: dict[str, Any], carrier: str) -> str:
+    """Maak een fallback-id uit velden die niet door statusupdates wijzigen."""
+    for field in ("parcel_id", "package_id", "shipment_id", "reference", "id"):
+        value = parcel.get(field)
+        if value not in (None, "") and not isinstance(value, dict | list):
+            return str(value).strip().casefold()
+    stable_fields = (
+        "carrier",
+        "sender",
+        "receiver",
+        "url",
+        "tracking_url",
+        "created_at",
+        "first_seen",
+        "date",
+        "title",
+    )
+    payload = tuple(
+        (field, str(parcel.get(field) or "").strip().casefold())
+        for field in stable_fields
+    )
+    return hashlib.sha256(
+        repr((carrier.casefold(), payload)).encode("utf-8")
+    ).hexdigest()[:16]
 
 
 def _classify_messages(
@@ -399,6 +467,30 @@ def _classify_messages(
             ],
         }
         packages: dict[str, dict[str, Any]] = {}
+
+        # If a thread contains exactly one tracking code, apply it to all
+        # status mails in that thread. If it contains multiple codes, keep the
+        # per-mail tracking keys to avoid merging unrelated parcels.
+        thread_codes: dict[str, set[str]] = {}
+        for candidate in messages:
+            if not _sender_matches(senders, candidate.get("senders", [])):
+                continue
+            candidate_text = (
+                f"{candidate.get('subject', '')} {candidate.get('body', '')}"
+            )
+            if not any(
+                pattern in candidate_text
+                for values in patterns.values()
+                for pattern in values
+            ):
+                continue
+            candidate_code = _extract_tracking_code(
+                candidate_text,
+                [str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])],
+            )
+            candidate_thread = candidate.get("thread_id")
+            if candidate_code and candidate_thread:
+                thread_codes.setdefault(candidate_thread, set()).add(candidate_code)
 
         for message in messages:
             if not _sender_matches(senders, message.get("senders", [])):
@@ -444,6 +536,12 @@ def _classify_messages(
                 if thread_id
                 else None
             )
+            if (
+                not tracking_code
+                and thread_id
+                and len(thread_codes.get(thread_id, set())) == 1
+            ):
+                tracking_code = next(iter(thread_codes[thread_id]))
             package_key = (
                 f"tracking:{tracking_code}"
                 if tracking_code
@@ -619,6 +717,9 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         self._cache: dict[str, Any] = {}
         self._cache_loaded = False
         self.threading_diagnostics: dict[str, dict[str, int]] = {}
+        self.consecutive_scan_failures = 0
+        self.last_scan_error: str | None = None
+        self.last_successful_scan: str | None = None
         interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
@@ -651,19 +752,27 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 "IMAP heeft de accountgegevens geweigerd"
             ) from err
         except (OSError, TimeoutError, _ImapCommandError, imaplib.IMAP4.error) as err:
+            self.consecutive_scan_failures += 1
+            self.last_scan_error = str(err)
             if self.data is not None:
                 _LOGGER.warning(
                     "Tijdelijke IMAP-scanfout; laatst bekende pakketdata blijft "
                     "behouden: %s",
                     err,
                 )
+                if self.consecutive_scan_failures >= _MAX_CONSECUTIVE_SCAN_FAILURES:
+                    raise UpdateFailed(f"IMAP-scan mislukt: {err}") from err
                 return self.data
             raise UpdateFailed(f"IMAP-scan mislukt: {err}") from err
         except Exception as err:  # noqa: BLE001
+            self.consecutive_scan_failures += 1
+            self.last_scan_error = str(err)
             if self.data is not None:
                 _LOGGER.exception(
                     "Onverwachte scanfout; laatst bekende pakketdata blijft behouden"
                 )
+                if self.consecutive_scan_failures >= _MAX_CONSECUTIVE_SCAN_FAILURES:
+                    raise UpdateFailed(f"Onverwachte IMAP-scanfout: {err}") from err
                 return self.data
             raise UpdateFailed(f"Onverwachte IMAP-scanfout: {err}") from err
 
@@ -673,6 +782,10 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 await self._store.async_save(self._cache)
             except OSError as err:
                 _LOGGER.warning("Pakketmailcache kon niet worden opgeslagen: %s", err)
+
+        self.consecutive_scan_failures = 0
+        self.last_scan_error = None
+        self.last_successful_scan = datetime.datetime.now(datetime.UTC).isoformat()
 
         if fetched:
             _LOGGER.debug(
@@ -748,9 +861,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 parcel = dict(raw_parcel)
                 carrier = str(parcel.get("carrier") or "Onbekend")
                 barcode = _normalize_code(parcel.get("barcode"))
-                fallback = hashlib.sha256(
-                    repr(sorted(parcel.items())).encode("utf-8")
-                ).hexdigest()[:16]
+                fallback = _stable_direct_parcel_key(parcel, carrier)
                 parcel_id = f"direct:{carrier.casefold()}:{barcode or fallback}"
                 parcel.update(
                     {

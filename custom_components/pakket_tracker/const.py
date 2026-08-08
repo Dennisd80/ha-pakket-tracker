@@ -89,7 +89,9 @@ PRESET_CARRIERS: dict[str, dict] = {
         ],
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd", "afgeleverd", "delivered"],
         CARRIER_MISSED_SUBJECTS: ["niet bezorgd", "delivery exception"],
-        CARRIER_TRACKING_PATTERNS: [r"\b(\d{14})\b"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"(?:pakket|zending|tracking|barcode)[^0-9]{0,24}(\d{14})\b"
+        ],
     },
     "amazon_nl": {
         CARRIER_NAME: "Amazon.nl",
@@ -183,7 +185,7 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_TRACKING_PATTERNS: [
             r"\b(3S[A-Z0-9]{10,18})\b",
             r"\b(JJD\d{14,25})\b",
-            r"\b(\d{14})\b",
+            r"(?:pakket|zending|tracking|barcode)[^0-9]{0,24}(\d{14})\b",
         ],
     },
     "aliexpress": {
@@ -269,7 +271,9 @@ PRESET_CARRIERS: dict[str, dict] = {
             "shipment was delivered",
         ],
         CARRIER_MISSED_SUBJECTS: ["fedex delivery exception"],
-        CARRIER_TRACKING_PATTERNS: [r"\b(\d{12,20})\b"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"(?:tracking|shipment|package|barcode)[^0-9]{0,24}(\d{12,20})\b"
+        ],
     },
     "trunkrs": {
         CARRIER_NAME: "Trunkrs",
@@ -295,7 +299,10 @@ PRESET_CARRIERS: dict[str, dict] = {
             "bezorging mislukt",
             "we hebben je gemist",
         ],
-        CARRIER_TRACKING_PATTERNS: [r"\b(\d{9})\b"],
+        CARRIER_TRACKING_PATTERNS: [
+            r"(?:pakket|trunkrsnummer|zending|tracking|barcode|afgeleverd|"
+            r"sorteercentrum|aanmelding|aangemeld|bezorgd)[^0-9]{0,24}(\d{9})\b"
+        ],
     },
     "budbee": {
         CARRIER_NAME: "Budbee",

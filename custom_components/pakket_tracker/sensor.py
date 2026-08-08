@@ -10,6 +10,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import RestoreSensor, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -59,6 +60,7 @@ async def async_setup_entry(
     carriers: dict[str, dict] = entry.options.get(CONF_CARRIERS, {})
 
     entities: list[PakketTrackerSensor] = []
+    expected_unique_ids: set[str] = set()
     for carrier_id, rule in carriers.items():
         carrier_name = rule.get(CARRIER_NAME, carrier_id)
         for stat in (
@@ -69,13 +71,26 @@ async def async_setup_entry(
             "packages",
             "missed",
         ):
+            expected_unique_ids.add(f"{entry.entry_id}_{carrier_id}_{stat}")
             entities.append(
                 PakketTrackerSensor(coordinator, entry, carrier_id, carrier_name, stat)
             )
     for summary_key, (name, icon) in SUMMARY_SENSORS.items():
+        expected_unique_ids.add(f"{entry.entry_id}_summary_{summary_key}")
         entities.append(
             PakketTrackerSummarySensor(coordinator, entry, summary_key, name, icon)
         )
+    registry = er.async_get(hass)
+    stale = [
+        item
+        for item in registry.entities.values()
+        if item.config_entry_id == entry.entry_id
+        and item.domain == "sensor"
+        and item.platform == DOMAIN
+        and item.unique_id not in expected_unique_ids
+    ]
+    for item in stale:
+        registry.async_remove(item.entity_id)
     async_add_entities(entities)
 
 
@@ -127,6 +142,8 @@ class PakketTrackerSensor(CoordinatorEntity, RestoreSensor):
         return {
             "tracking_codes": tracking,
             "last_scan_success": self.coordinator.last_update_success,
+            "scan_error": self.coordinator.last_scan_error,
+            "consecutive_scan_failures": self.coordinator.consecutive_scan_failures,
         }
 
     @property
@@ -195,6 +212,8 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
         attributes: dict[str, object] = {
             "by_carrier": by_carrier,
             "last_scan_success": self.coordinator.last_update_success,
+            "scan_error": self.coordinator.last_scan_error,
+            "consecutive_scan_failures": self.coordinator.consecutive_scan_failures,
         }
         # Eén canonieke lijst voorkomt dat dezelfde grote attributen vijf keer
         # in Recorder terechtkomen. De andere sensoren blijven lichte tellers.
