@@ -84,6 +84,16 @@ Diagnostiek maskeert gebruikersnaam, wachtwoord en notify-service.
 Publiceer nooit `secrets.yaml`, bestanden uit `.storage`, Home Assistant-logs of
 onbewerkte pakketmails in een issue. Zie ook [SECURITY.md](SECURITY.md).
 
+Een custom Track & Trace-template met `{postal_code}` kan de postcode opnemen
+in het `tracking_url`-attribuut dat Home Assistant Recorder opslaat. Gebruik
+bij voorkeur alleen `{code}`, of sluit de betreffende summary-sensor uit in
+Recorder. De postcode wordt wel uit diagnostics geredigeerd.
+
+Pakketten zonder barcode kunnen niet veilig tussen e-mail en Parcel Aggregator
+worden samengevoegd zonder risico op false merges. De integratie houdt zulke
+bronnen daarom bewust apart; gebruik een betrouwbare trackingregex als je
+cross-source deduplicatie nodig hebt.
+
 ## Bijdragen
 
 Issues en pull requests zijn welkom. Nieuwe vervoerderregels moeten bij voorkeur

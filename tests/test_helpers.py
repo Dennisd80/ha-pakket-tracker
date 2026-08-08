@@ -4,6 +4,7 @@ import datetime
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
+from zoneinfo import ZoneInfo
 
 import pytest
 from homeassistant.components.sensor import SensorStateClass
@@ -27,6 +28,7 @@ from custom_components.pakket_tracker.const import (
     PRESET_VERSION,
 )
 from custom_components.pakket_tracker.coordinator import (
+    PakketTrackerCoordinator,
     _build_tracking_url,
     _classify_messages,
     _extract_tracking_code,
@@ -95,6 +97,39 @@ def test_build_tracking_url_uses_code_and_optional_postal_code():
         {"tracking_url": "https://example.test/{code}?pc={postal_code}"},
         "3146 CH",
     ) == "https://example.test/3SABC123?pc=3146%20CH"
+
+
+@pytest.mark.parametrize(
+    "template",
+    ["https://example.test/{}", "https://example.test/{code.upper}"],
+)
+def test_build_tracking_url_rejects_unsafe_templates(template):
+    assert _build_tracking_url("ABC123", {"tracking_url": template}) is None
+
+
+def test_delivery_statistics_uses_local_timezone_boundaries():
+    now = datetime.datetime.now(datetime.UTC)
+    coordinator = SimpleNamespace(
+        _cache={
+            "delivery_events": [
+                {
+                    "id": "barcode:ABC123",
+                    "carrier_id": "postnl",
+                    "timestamp": now.isoformat(),
+                }
+            ],
+            "delivered_totals": {"postnl": 1},
+        }
+    )
+    stats = PakketTrackerCoordinator._delivery_statistics(
+        coordinator, ZoneInfo("Europe/Amsterdam")
+    )
+    assert stats["postnl"] == {
+        "delivered_total": 1,
+        "delivered_week": 1,
+        "delivered_month": 1,
+        "delivered_year": 1,
+    }
 
 
 def test_tracking_code_normalization_removes_spaces_and_hyphens():
@@ -332,6 +367,7 @@ def test_preset_upgrade_is_one_time_and_preserves_custom_values():
     assert upgraded[CONF_PRESET_VERSION] == PRESET_VERSION
     assert upgraded[CONF_CARRIERS]["postnl"][CARRIER_NAME] == "Mijn PostNL"
     assert "custom@example.com" in upgraded[CONF_CARRIERS]["postnl"][CARRIER_SENDERS]
+    assert upgraded[CONF_CARRIERS]["postnl"]["tracking_url"]
     assert set(PRESET_CARRIERS) <= set(upgraded[CONF_CARRIERS])
     assert _upgrade_preset_options(upgraded) is None
 

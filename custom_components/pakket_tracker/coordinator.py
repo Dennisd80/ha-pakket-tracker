@@ -130,16 +130,17 @@ def _build_tracking_url(
 ) -> str | None:
     """Vul een configureerbare vervoerder-URL zonder gevoelige data te loggen."""
     template = str(rule.get(CARRIER_TRACKING_URL) or "").strip()
-    if not code or not template:
+    if not code or not template or "{code}" not in template:
+        if template and code and "{code}" not in template:
+            _LOGGER.warning("Tracking-URL-template mist {code}; overgeslagen")
         return None
-    try:
-        return template.format(
-            code=quote(code, safe=""),
-            postal_code=quote(postal_code.strip(), safe=""),
-        )
-    except (KeyError, ValueError):
+    placeholders = re.findall(r"\{([^{}]+)\}", template)
+    if any(name not in {"code", "postal_code"} for name in placeholders):
         _LOGGER.warning("Ongeldige tracking-URL-template overgeslagen")
         return None
+    return template.replace("{code}", quote(code, safe="")).replace(
+        "{postal_code}", quote(postal_code.strip(), safe="")
+    )
 
 
 def _timestamp_after(value: object, cutoff: datetime.datetime) -> bool:
@@ -375,6 +376,7 @@ def _fetch_recent_emails(
             "messages": current_messages,
             "confirmed": cache.get("confirmed", {}),
             "delivery_events": cache.get("delivery_events", []),
+            "delivered_totals": cache.get("delivered_totals", {}),
         }
         messages = [current_messages[uid] for uid in uids if uid in current_messages]
         return messages, new_cache, fetched
@@ -839,7 +841,9 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             postal_code=self.entry.options.get(CONF_POSTAL_CODE, ""),
         )
         result[SUMMARY_KEY] = self._build_summary(result, confirmed_ids)
-        result[SUMMARY_KEY]["delivery_statistics"] = self._delivery_statistics()
+        result[SUMMARY_KEY]["delivery_statistics"] = self._delivery_statistics(
+            time_zone
+        )
         return result
 
     def _purge_old_confirmations(self) -> None:
@@ -872,6 +876,14 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         self._cache["confirmed"] = retained
         events = self._cache.get("delivery_events", [])
         if isinstance(events, list):
+            totals = self._cache.get("delivered_totals")
+            if not isinstance(totals, dict):
+                totals = {}
+                for event in events:
+                    if isinstance(event, dict):
+                        carrier_id = str(event.get("carrier_id") or "unknown")
+                        totals[carrier_id] = totals.get(carrier_id, 0) + 1
+                self._cache["delivered_totals"] = totals
             event_cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
                 days=370
             )
@@ -882,12 +894,17 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 and str(event.get("timestamp", ""))
                 and _timestamp_after(event.get("timestamp"), event_cutoff)
             ]
-    def _delivery_statistics(self) -> dict[str, dict[str, int]]:
+    def _delivery_statistics(
+        self, time_zone: datetime.tzinfo = datetime.UTC
+    ) -> dict[str, dict[str, int]]:
         """Bereken totaal/week/maand/jaar uit unieke bevestigingsevents."""
         events = self._cache.get("delivery_events", [])
         if not isinstance(events, list):
             return {}
-        now = datetime.datetime.now(datetime.UTC)
+        delivered_totals = self._cache.get("delivered_totals", {})
+        if not isinstance(delivered_totals, dict):
+            delivered_totals = {}
+        now = datetime.datetime.now(datetime.UTC).astimezone(time_zone)
         start_week = now - datetime.timedelta(days=now.weekday())
         start_week = start_week.replace(hour=0, minute=0, second=0, microsecond=0)
         start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -903,18 +920,18 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 timestamp = datetime.datetime.fromisoformat(str(event["timestamp"]))
                 if timestamp.tzinfo is None:
                     timestamp = timestamp.replace(tzinfo=datetime.UTC)
+                timestamp = timestamp.astimezone(time_zone)
             except (KeyError, TypeError, ValueError):
                 continue
             values = stats.setdefault(
                 carrier_id,
                 {
-                    "delivered_total": 0,
+                    "delivered_total": int(delivered_totals.get(carrier_id, 0)),
                     "delivered_week": 0,
                     "delivered_month": 0,
                     "delivered_year": 0,
                 },
             )
-            values["delivered_total"] += 1
             if timestamp >= start_week:
                 values["delivered_week"] += 1
             if timestamp >= start_month:
@@ -922,7 +939,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             if timestamp >= start_year:
                 values["delivered_year"] += 1
         total = {
-            "delivered_total": 0,
+            "delivered_total": sum(int(value) for value in delivered_totals.values()),
             "delivered_week": 0,
             "delivered_month": 0,
             "delivered_year": 0,
@@ -1074,15 +1091,30 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             events = []
             self._cache["delivery_events"] = events
         now = datetime.datetime.now(datetime.UTC).isoformat()
+        event_ids = {
+            str(event.get("id"))
+            for event in events
+            if isinstance(event, dict) and event.get("id")
+        }
+        totals = self._cache.setdefault("delivered_totals", {})
+        if not isinstance(totals, dict):
+            totals = {}
+            self._cache["delivered_totals"] = totals
         for parcel in parcels:
             barcode = _normalize_code(parcel.get("barcode"))
             event_id = f"barcode:{barcode}" if barcode else parcel.get("id")
-            already_confirmed = bool(event_id and event_id in confirmed)
+            already_confirmed = bool(
+                event_id and (event_id in confirmed or event_id in event_ids)
+            )
             if parcel_id := parcel.get("id"):
                 confirmed[parcel_id] = now
             if barcode:
                 confirmed[f"barcode:{barcode}"] = now
-            if event_id and not already_confirmed:
+            if (
+                event_id
+                and not already_confirmed
+                and parcel.get("status") == "delivered"
+            ):
                 events.append(
                     {
                         "id": event_id,
@@ -1090,6 +1122,9 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                         "timestamp": now,
                     }
                 )
+                event_ids.add(str(event_id))
+                carrier_id = str(parcel.get("carrier_id") or "unknown")
+                totals[carrier_id] = int(totals.get(carrier_id, 0)) + 1
         await self._store.async_save(self._cache)
         await self.async_request_refresh()
         return len(parcels)

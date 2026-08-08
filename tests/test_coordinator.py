@@ -1,5 +1,7 @@
 """Tests voor coordinator-integraties."""
 
+import datetime
+
 import pytest
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -99,6 +101,41 @@ async def test_scan_errors_raise_after_three_consecutive_failures(hass, monkeypa
     assert coordinator.last_scan_error == "mailbox unavailable"
 
 
+@pytest.mark.asyncio
+async def test_confirm_received_only_records_delivered_once(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = PakketTrackerCoordinator(hass, entry)
+    coordinator.data = {
+        "_summary": {
+            "parcels": [
+                {"id": "p1", "carrier_id": "test", "status": "in_transit"},
+                {
+                    "id": "p2",
+                    "carrier_id": "test",
+                    "status": "delivered",
+                    "barcode": "ABC123",
+                },
+            ]
+        }
+    }
+    async def _save(_cache):
+        return None
+
+    async def _refresh():
+        return None
+
+    monkeypatch.setattr(coordinator._store, "async_save", _save)
+    monkeypatch.setattr(coordinator, "async_request_refresh", _refresh)
+
+    await coordinator.async_confirm_received()
+    await coordinator.async_confirm_received()
+
+    events = coordinator._cache["delivery_events"]
+    assert len(events) == 1
+    assert events[0]["id"] == "barcode:ABC123"
+    assert coordinator._cache["delivered_totals"] == {"test": 1}
+
+
 def test_parcel_aggregator_entity_can_be_renamed(hass):
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     registry = er.async_get(hass)
@@ -179,3 +216,32 @@ def test_mail_and_direct_barcode_variants_are_merged(hass):
 
     assert summary["total"] == 1
     assert summary["parcels"][0]["barcode"] == "3SABC123"
+
+
+def test_build_summary_reports_stale_and_pickup_counts():
+    coordinator = type("Coordinator", (), {"_direct_parcels": lambda self: []})()
+    result = {
+        "voorbeeld": {
+            "parcels": [
+                {
+                    "id": "email:old",
+                    "carrier": "Voorbeeld",
+                    "carrier_id": "voorbeeld",
+                    "status": "in_transit",
+                    "last_seen": "2020-01-01T00:00:00+00:00",
+                    "barcode": None,
+                },
+                {
+                    "id": "email:pickup",
+                    "carrier": "Voorbeeld",
+                    "carrier_id": "voorbeeld",
+                    "status": "at_pickup_point",
+                    "last_seen": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "barcode": None,
+                },
+            ]
+        }
+    }
+    summary = PakketTrackerCoordinator._build_summary(coordinator, result, set())
+    assert summary["stale"] == 1
+    assert summary["pickup"] == 1
