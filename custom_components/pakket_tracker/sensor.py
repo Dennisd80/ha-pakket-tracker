@@ -49,7 +49,16 @@ SUMMARY_SENSORS = {
         "mdi:package-check",
     ),
     "problems": ("Pakket Tracker Problemen", "mdi:package-variant-remove"),
+    "stale": ("Pakket Tracker Lang ongewijzigd", "mdi:package-clock"),
+    "pickup": ("Pakket Tracker Afhaalpunten", "mdi:package-marker"),
     "total": ("Pakket Tracker Totaal open", "mdi:package-variant"),
+}
+
+DELIVERY_STAT_PERIODS = {
+    "delivered_total": "Bezorgd totaal",
+    "delivered_week": "Bezorgd deze week",
+    "delivered_month": "Bezorgd deze maand",
+    "delivered_year": "Bezorgd dit jaar",
 }
 
 
@@ -75,11 +84,35 @@ async def async_setup_entry(
             entities.append(
                 PakketTrackerSensor(coordinator, entry, carrier_id, carrier_name, stat)
             )
+    for period, label in DELIVERY_STAT_PERIODS.items():
+        unique_id = f"{entry.entry_id}___all_{period}"
+        expected_unique_ids.add(unique_id)
+        entities.append(
+            PakketTrackerDeliveryStatsSensor(
+                coordinator,
+                entry,
+                "__all__",
+                "Alle vervoerders",
+                period,
+                label,
+                unique_id=unique_id,
+            )
+        )
     for summary_key, (name, icon) in SUMMARY_SENSORS.items():
         expected_unique_ids.add(f"{entry.entry_id}_summary_{summary_key}")
         entities.append(
             PakketTrackerSummarySensor(coordinator, entry, summary_key, name, icon)
         )
+    for carrier_id, rule in carriers.items():
+        carrier_name = rule.get(CARRIER_NAME, carrier_id)
+        for period, label in DELIVERY_STAT_PERIODS.items():
+            unique_id = f"{entry.entry_id}_{carrier_id}_{period}"
+            expected_unique_ids.add(unique_id)
+            entities.append(
+                PakketTrackerDeliveryStatsSensor(
+                    coordinator, entry, carrier_id, carrier_name, period, label
+                )
+            )
     registry = er.async_get(hass)
     stale = [
         item
@@ -219,6 +252,7 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
         # in Recorder terechtkomen. De andere sensoren blijven lichte tellers.
         if self._summary_key == "total":
             attributes["parcels"] = summary.get("parcels", [])
+        attributes["delivery_statistics"] = summary.get("delivery_statistics", {})
         return attributes
 
     @property
@@ -232,5 +266,70 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
             ),
             "manufacturer": "Pakket Tracker Community",
             "model": "Unified Parcel Registry",
+            "sw_version": VERSION,
+        }
+
+
+class PakketTrackerDeliveryStatsSensor(CoordinatorEntity, RestoreSensor):
+    """Persistente bezorgteller per vervoerder en periode."""
+
+    _attr_native_unit_of_measurement = "package(s)"
+
+    def __init__(
+        self,
+        coordinator,
+        entry,
+        carrier_id,
+        carrier_name,
+        period,
+        label,
+        unique_id=None,
+    ):
+        super().__init__(coordinator)
+        self._entry_id = entry.entry_id
+        self._username = entry.data.get(CONF_USERNAME, "")
+        self._carrier_id = carrier_id
+        self._period = period
+        self._attr_unique_id = unique_id or f"{entry.entry_id}_{carrier_id}_{period}"
+        self._attr_name = f"{carrier_name} {label}"
+        self._attr_icon = "mdi:package-check"
+        self._attr_state_class = (
+            SensorStateClass.TOTAL_INCREASING
+            if period == "delivered_total"
+            else SensorStateClass.MEASUREMENT
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (sensor_data := await self.async_get_last_sensor_data()) is not None:
+            self._attr_native_value = sensor_data.native_value
+
+    @property
+    def native_value(self) -> int:
+        stats = (self.coordinator.data or {}).get(SUMMARY_KEY, {}).get(
+            "delivery_statistics", {}
+        )
+        value = stats.get(self._carrier_id, {}).get(self._period, 0)
+        self._attr_native_value = value
+        return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "last_scan_success": self.coordinator.last_update_success,
+            "scan_error": self.coordinator.last_scan_error,
+        }
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._entry_id)},
+            "name": (
+                f"Pakket Tracker ({self._username})"
+                if self._username
+                else "Pakket Tracker NL"
+            ),
+            "manufacturer": "Pakket Tracker Community",
+            "model": "IMAP Pakket Monitor",
             "sw_version": VERSION,
         }

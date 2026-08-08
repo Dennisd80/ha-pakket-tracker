@@ -27,6 +27,7 @@ from custom_components.pakket_tracker.const import (
     PRESET_VERSION,
 )
 from custom_components.pakket_tracker.coordinator import (
+    _build_tracking_url,
     _classify_messages,
     _extract_tracking_code,
     _normalize_code,
@@ -86,6 +87,14 @@ def test_sender_matching_is_exact_and_supports_domains():
 def test_extract_tracking_code():
     assert _extract_tracking_code("Je barcode is 3SABCDEFGHIJKL") == "3SABCDEFGHIJKL"
     assert _extract_tracking_code("Je afspraak is op 20260804") is None
+
+
+def test_build_tracking_url_uses_code_and_optional_postal_code():
+    assert _build_tracking_url(
+        "3SABC123",
+        {"tracking_url": "https://example.test/{code}?pc={postal_code}"},
+        "3146 CH",
+    ) == "https://example.test/3SABC123?pc=3146%20CH"
 
 
 def test_tracking_code_normalization_removes_spaces_and_hyphens():

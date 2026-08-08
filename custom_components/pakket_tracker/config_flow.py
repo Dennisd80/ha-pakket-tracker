@@ -26,6 +26,7 @@ from .const import (
     CARRIER_REGISTERED_SUBJECTS,
     CARRIER_SENDERS,
     CARRIER_TRACKING_PATTERNS,
+    CARRIER_TRACKING_URL,
     CARRIER_TRANSIT_SUBJECTS,
     CONF_CARRIERS,
     CONF_CONFIRMATION_ENABLED,
@@ -37,6 +38,7 @@ from .const import (
     CONF_IMAP_TIMEOUT,
     CONF_NOTIFY_SERVICE,
     CONF_PASSWORD,
+    CONF_POSTAL_CODE,
     CONF_PRESET_VERSION,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_WINDOW_DAYS,
@@ -147,6 +149,7 @@ class PakketTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_CONFIRMATION_ENABLED: DEFAULT_CONFIRMATION_ENABLED,
                         CONF_CONFIRMATION_TIME: DEFAULT_CONFIRMATION_TIME,
                         CONF_NOTIFY_SERVICE: DEFAULT_NOTIFY_SERVICE,
+                        CONF_POSTAL_CODE: "",
                         CONF_PRESET_VERSION: PRESET_VERSION,
                     },
                 )
@@ -253,6 +256,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 CONF_NOTIFY_SERVICE: self.config_entry.options.get(
                     CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
                 ),
+                CONF_POSTAL_CODE: self.config_entry.options.get(CONF_POSTAL_CODE, ""),
                 CONF_PRESET_VERSION: self.config_entry.options.get(
                     CONF_PRESET_VERSION, PRESET_VERSION
                 ),
@@ -314,6 +318,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                         ],
                         CONF_CONFIRMATION_TIME: confirmation_time,
                         CONF_NOTIFY_SERVICE: notify_service,
+                        CONF_POSTAL_CODE: user_input.get(CONF_POSTAL_CODE, "").strip(),
                         CONF_PRESET_VERSION: self.config_entry.options.get(
                             CONF_PRESET_VERSION, PRESET_VERSION
                         ),
@@ -348,6 +353,12 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(int),
                     vol.Range(min=MIN_SCAN_WINDOW_DAYS, max=MAX_SCAN_WINDOW_DAYS),
                 ),
+                vol.Optional(
+                    CONF_POSTAL_CODE,
+                    default=(user_input or self.config_entry.options).get(
+                        CONF_POSTAL_CODE, ""
+                    ),
+                ): str,
                 vol.Required(
                     CONF_CONFIRMATION_ENABLED,
                     default=(user_input or self.config_entry.options).get(
@@ -417,6 +428,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                         else []
                     ),
                     CARRIER_TRACKING_PATTERNS: [],
+                    CARRIER_TRACKING_URL: user_input.get(
+                        CARRIER_TRACKING_URL, ""
+                    ).strip(),
                 }
                 return self._save()
 
@@ -429,6 +443,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("delivering_title"): str,
                 vol.Optional("delivered_title", default=""): str,
                 vol.Optional("missed_title", default=""): str,
+                vol.Optional(CARRIER_TRACKING_URL, default=""): str,
             }
         )
         return self.async_show_form(
@@ -473,6 +488,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     CARRIER_TRACKING_PATTERNS: _split_regex_lines(
                         user_input.get(CARRIER_TRACKING_PATTERNS, "")
                     ),
+                    CARRIER_TRACKING_URL: user_input.get(
+                        CARRIER_TRACKING_URL, ""
+                    ).strip(),
                 }
                 return self._save()
 
@@ -486,6 +504,7 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CARRIER_DELIVERED_SUBJECTS, default=""): str,
                 vol.Optional(CARRIER_MISSED_SUBJECTS, default=""): str,
                 vol.Optional(CARRIER_TRACKING_PATTERNS, default=""): str,
+                vol.Optional(CARRIER_TRACKING_URL, default=""): str,
             }
         )
         return self.async_show_form(
@@ -536,6 +555,9 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
             carrier[CARRIER_TRACKING_PATTERNS] = _split_regex_lines(
                 user_input.get(CARRIER_TRACKING_PATTERNS, "")
             )
+            carrier[CARRIER_TRACKING_URL] = user_input.get(
+                CARRIER_TRACKING_URL, ""
+            ).strip()
             self._carriers[carrier_id] = carrier
             return self._save()
 
@@ -567,6 +589,10 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CARRIER_TRACKING_PATTERNS,
                     default=_join_lines(carrier.get(CARRIER_TRACKING_PATTERNS, [])),
+                ): str,
+                vol.Optional(
+                    CARRIER_TRACKING_URL,
+                    default=carrier.get(CARRIER_TRACKING_URL, ""),
                 ): str,
             }
         )

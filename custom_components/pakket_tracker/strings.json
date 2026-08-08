@@ -51,6 +51,7 @@
           "delivering_title": "Titeltekst voor onderweg/vandaag",
           "delivered_title": "Titeltekst voor bezorgd (optioneel)",
           "missed_title": "Titeltekst voor gemist (optioneel)"
+          ,"tracking_url": "Track & Trace URL-template (gebruik {code})"
         }
       },
       "add_carrier": {
@@ -64,6 +65,7 @@
           "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
           "missed_subjects": "Onderwerp-patronen 'gemist', één per regel",
           "tracking_patterns": "Trackingcode-regexen, één per regel (optioneel)"
+          ,"tracking_url": "Track & Trace URL-template (gebruik {code} en optioneel {postal_code})"
         }
       },
       "edit_carrier": {
@@ -80,6 +82,7 @@
           "delivered_subjects": "Onderwerp-patronen 'bezorgd', één per regel",
           "missed_subjects": "Onderwerp-patronen 'gemist', één per regel",
           "tracking_patterns": "Trackingcode-regexen, één per regel (optioneel)"
+          ,"tracking_url": "Track & Trace URL-template (gebruik {code} en optioneel {postal_code})"
         }
       },
       "remove_carrier": {
@@ -95,6 +98,7 @@
           ,"confirmation_enabled": "Dagelijkse ontvangstbevestiging inschakelen"
           ,"confirmation_time": "Tijdstip ontvangstbevestiging (HH:MM of HH:MM:SS)"
           ,"notify_service": "Notify-service voor de telefoon"
+          ,"postal_code": "Postcode voor Track & Trace (optioneel)"
         }
       }
     },
