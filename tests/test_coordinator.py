@@ -17,6 +17,7 @@ from custom_components.pakket_tracker.coordinator import (
     PakketTrackerCoordinator,
     _classify_messages,
     _fetch_recent_emails,
+    _prepare_carrier_rules,
 )
 
 
@@ -208,7 +209,7 @@ def test_mail_and_direct_barcode_variants_are_merged(hass):
                 "timestamp": 1.0,
             }
         ],
-        carriers,
+        _prepare_carrier_rules(carriers),
     )
 
     coordinator = PakketTrackerCoordinator(hass, entry)

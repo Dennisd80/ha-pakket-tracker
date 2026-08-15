@@ -60,6 +60,7 @@ async def async_get_config_entry_diagnostics(
                 len(cache_messages) if isinstance(cache_messages, dict) else 0
             ),
             "carrier_counts": carrier_counts,
-            "threading": coordinator.threading_diagnostics,
+            "threading": await coordinator.async_get_threading_diagnostics(),
+            "scan_timings": coordinator.scan_timings,
         },
     }

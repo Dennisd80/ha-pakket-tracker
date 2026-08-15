@@ -16,6 +16,8 @@ Vereist Home Assistant 2025.1 of nieuwer.
 - Vervoerder-specifieke trackingcodepatronen voor betrouwbare deduplicatie.
 - Zelf een vervoerder toevoegen via naam, afzenderadres en mailteksten.
 - IMAP UID-cache: alleen nieuwe mails worden opnieuw opgehaald.
+- Efficiënte mailboxscan: IMAP-ophalingen in batches, vooraf gecompileerde
+  regels en filtering op relevante afzenders.
 - Canoniek pakketoverzicht met deduplicatie op trackingcode.
 - Optionele samenvoeging met `Parcel Aggregator`-sensoren van losse
   vervoerderintegraties.

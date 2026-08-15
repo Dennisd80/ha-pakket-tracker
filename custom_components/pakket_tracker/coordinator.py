@@ -14,6 +14,7 @@ import html as html_lib
 import imaplib
 import logging
 import re
+import time
 from datetime import timedelta
 from email.header import decode_header
 from email.utils import getaddresses, parsedate_to_datetime
@@ -62,11 +63,12 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_MAX_BODY_CHARS = 100_000
+_MAX_BODY_CHARS = 32_768
+_IMAP_FETCH_BATCH_SIZE = 100
 _UIDVALIDITY_RE = re.compile(rb"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
 _MESSAGE_ID_RE = re.compile(r"<[^<>]+>")
 _FETCH_UID_RE = re.compile(rb"\bUID\s+(\d+)", re.IGNORECASE)
-_CACHE_PARSER_VERSION = 2
+_CACHE_PARSER_VERSION = 3
 _MAX_CONSECUTIVE_SCAN_FAILURES = 3
 
 # Veelgebruikte Nederlandse en internationale trackingformaten plus generieke
@@ -328,26 +330,30 @@ def _fetch_recent_emails(
                 current_messages[uid] = cached_messages[uid]
 
         if uncached:
-            fetch_status, fetch_response = connection.uid(
-                "fetch", ",".join(uncached), "(UID BODY.PEEK[])"
-            )
             fetched_messages: dict[str, bytes] = {}
-            if fetch_status == "OK":
-                for item in fetch_response or []:
-                    if not isinstance(item, tuple) or len(item) < 2:
-                        continue
-                    header, raw_message = item[0], item[1]
-                    if not isinstance(header, bytes) or not isinstance(
-                        raw_message, bytes
-                    ):
-                        continue
-                    match = _FETCH_UID_RE.search(header)
-                    if match:
-                        fetched_messages[match.group(1).decode("ascii")] = raw_message
-            # Some IMAP servers do not support a multi-UID FETCH. Keep a
-            # compatible per-UID fallback instead of losing new messages.
-            if len(fetched_messages) < len(uncached):
-                for uid in uncached:
+            for start in range(0, len(uncached), _IMAP_FETCH_BATCH_SIZE):
+                batch = uncached[start : start + _IMAP_FETCH_BATCH_SIZE]
+                fetch_status, fetch_response = connection.uid(
+                    "fetch", ",".join(batch), "(UID BODY.PEEK[])"
+                )
+                if fetch_status == "OK":
+                    for item in fetch_response or []:
+                        if not isinstance(item, tuple) or len(item) < 2:
+                            continue
+                        header, raw_message = item[0], item[1]
+                        if not isinstance(header, bytes) or not isinstance(
+                            raw_message, bytes
+                        ):
+                            continue
+                        match = _FETCH_UID_RE.search(header)
+                        if match:
+                            fetched_messages[match.group(1).decode("ascii")] = (
+                                raw_message
+                            )
+
+                # Some IMAP servers do not support a multi-UID FETCH. Keep a
+                # compatible per-UID fallback for only the missed batch items.
+                for uid in batch:
                     if uid in fetched_messages:
                         continue
                     status, response = connection.uid("fetch", uid, "(BODY.PEEK[])")
@@ -438,6 +444,113 @@ def _extract_tracking_code(
     return None
 
 
+def _prepare_carrier_rules(carriers: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Prepare matching rules once per coordinator lifetime."""
+    prepared: dict[str, dict[str, Any]] = {}
+    exact_senders: dict[str, set[str]] = {}
+    domain_senders: list[tuple[str, str]] = []
+    status_fields = {
+        "registered": CARRIER_REGISTERED_SUBJECTS,
+        "transit": CARRIER_TRANSIT_SUBJECTS,
+        "delivering": CARRIER_DELIVERING_SUBJECTS,
+        "delivered": CARRIER_DELIVERED_SUBJECTS,
+        "missed": CARRIER_MISSED_SUBJECTS,
+    }
+
+    for carrier_id, rule in carriers.items():
+        tracking_patterns: list[tuple[str, re.Pattern[str]]] = []
+        for raw_pattern in rule.get(CARRIER_TRACKING_PATTERNS, []):
+            raw_pattern = str(raw_pattern)
+            try:
+                tracking_patterns.append(
+                    (raw_pattern, re.compile(raw_pattern, re.IGNORECASE))
+                )
+            except re.error:
+                _LOGGER.warning(
+                    "Ongeldige trackingregex voor vervoerder %s overgeslagen: %s",
+                    carrier_id,
+                    raw_pattern,
+                )
+
+        prepared[carrier_id] = {
+            "rule": rule,
+            "status_patterns": {
+                status: tuple(
+                    str(value).casefold()
+                    for value in rule.get(field, [])
+                    if str(value).strip()
+                )
+                for status, field in status_fields.items()
+            },
+            "tracking_patterns": tracking_patterns,
+        }
+        for sender in rule.get(CARRIER_SENDERS, []):
+            normalized = str(sender).strip().casefold()
+            if not normalized:
+                continue
+            if normalized.startswith("@"):
+                domain_senders.append((normalized, carrier_id))
+            else:
+                exact_senders.setdefault(normalized, set()).add(carrier_id)
+
+    return {
+        "carriers": prepared,
+        "exact_senders": exact_senders,
+        "domain_senders": domain_senders,
+    }
+
+
+def _messages_by_carrier(
+    messages: list[dict[str, Any]], prepared_rules: dict[str, Any]
+) -> dict[str, list[dict[str, Any]]]:
+    """Index each message by carriers whose configured sender can match it."""
+    matches = {carrier_id: [] for carrier_id in prepared_rules["carriers"]}
+    exact_senders = prepared_rules["exact_senders"]
+    domain_senders = prepared_rules["domain_senders"]
+    for message in messages:
+        carrier_ids: set[str] = set()
+        for address in message.get("senders", []):
+            normalized = str(address).casefold()
+            carrier_ids.update(exact_senders.get(normalized, ()))
+            carrier_ids.update(
+                carrier_id
+                for domain, carrier_id in domain_senders
+                if normalized.endswith(domain)
+            )
+        for carrier_id in carrier_ids:
+            matches[carrier_id].append(message)
+    return matches
+
+
+def _extract_compiled_tracking_code(
+    text: str, carrier_patterns: list[tuple[str, re.Pattern[str]]]
+) -> str | None:
+    """Extract a tracking code without compiling custom patterns per message."""
+    for raw_pattern, pattern in carrier_patterns:
+        if match := pattern.search(text):
+            value = match.group(1) if match.lastindex else match.group(0)
+            if (
+                r"\d" in raw_pattern
+                and not re.search(
+                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                    raw_pattern,
+                    re.IGNORECASE,
+                )
+            ):
+                context = text[max(0, match.start() - 48) : match.start()]
+                if not re.search(
+                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                    context,
+                    re.IGNORECASE,
+                ):
+                    continue
+            return _normalize_code(value)
+    for pattern in _TRACKING_PATTERNS:
+        if match := pattern.search(text):
+            return _normalize_code(match.group(1))
+    return None
+
+
 def _stable_direct_parcel_key(parcel: dict[str, Any], carrier: str) -> str:
     """Maak een fallback-id uit velden die niet door statusupdates wijzigen."""
     for field in ("parcel_id", "package_id", "shipment_id", "reference", "id"):
@@ -466,7 +579,7 @@ def _stable_direct_parcel_key(parcel: dict[str, Any], carrier: str) -> str:
 
 def _classify_messages(
     messages: list[dict[str, Any]],
-    carriers: dict[str, dict[str, Any]],
+    prepared_rules: dict[str, Any],
     confirmed_ids: set[str] | None = None,
     time_zone: datetime.tzinfo = datetime.UTC,
     postal_code: str = "",
@@ -474,39 +587,28 @@ def _classify_messages(
     """Classificeer mails en dedupliceer waar een pakketcode beschikbaar is."""
     result: dict[str, dict[str, Any]] = {}
     confirmed_ids = confirmed_ids or set()
+    messages_by_carrier = _messages_by_carrier(messages, prepared_rules)
 
-    for carrier_id, rule in carriers.items():
-        senders = [str(value).casefold() for value in rule.get(CARRIER_SENDERS, [])]
-        patterns = {
-            "registered": [
-                str(value).casefold()
-                for value in rule.get(CARRIER_REGISTERED_SUBJECTS, [])
-            ],
-            "transit": [
-                str(value).casefold()
-                for value in rule.get(CARRIER_TRANSIT_SUBJECTS, [])
-            ],
-            "delivering": [
-                str(value).casefold()
-                for value in rule.get(CARRIER_DELIVERING_SUBJECTS, [])
-            ],
-            "delivered": [
-                str(value).casefold()
-                for value in rule.get(CARRIER_DELIVERED_SUBJECTS, [])
-            ],
-            "missed": [
-                str(value).casefold() for value in rule.get(CARRIER_MISSED_SUBJECTS, [])
-            ],
-        }
+    for carrier_id, prepared in prepared_rules["carriers"].items():
+        rule = prepared["rule"]
+        patterns = prepared["status_patterns"]
+        carrier_messages = messages_by_carrier[carrier_id]
         packages: dict[str, dict[str, Any]] = {}
+        message_codes: dict[str, str | None] = {}
+
+        def tracking_code_for(message: dict[str, Any], haystack: str) -> str | None:
+            uid = str(message.get("uid") or "")
+            if uid not in message_codes:
+                message_codes[uid] = _extract_compiled_tracking_code(
+                    haystack, prepared["tracking_patterns"]
+                )
+            return message_codes[uid]
 
         # If a thread contains exactly one tracking code, apply it to all
         # status mails in that thread. If it contains multiple codes, keep the
         # per-mail tracking keys to avoid merging unrelated parcels.
         thread_codes: dict[str, set[str]] = {}
-        for candidate in messages:
-            if not _sender_matches(senders, candidate.get("senders", [])):
-                continue
+        for candidate in carrier_messages:
             candidate_text = (
                 f"{candidate.get('subject', '')} {candidate.get('body', '')}"
             )
@@ -516,17 +618,12 @@ def _classify_messages(
                 for pattern in values
             ):
                 continue
-            candidate_code = _extract_tracking_code(
-                candidate_text,
-                [str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])],
-            )
+            candidate_code = tracking_code_for(candidate, candidate_text)
             candidate_thread = candidate.get("thread_id")
             if candidate_code and candidate_thread:
                 thread_codes.setdefault(candidate_thread, set()).add(candidate_code)
 
-        for message in messages:
-            if not _sender_matches(senders, message.get("senders", [])):
-                continue
+        for message in carrier_messages:
             haystack = f"{message.get('subject', '')} {message.get('body', '')}"
 
             # Een status is exclusief. De zwaarste/eindstatus wint als één mail
@@ -552,10 +649,7 @@ def _classify_messages(
             if status is None:
                 continue
 
-            tracking_code = _extract_tracking_code(
-                haystack,
-                [str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])],
-            )
+            tracking_code = tracking_code_for(message, haystack)
             message_id = message.get("message_id")
             message_fingerprint = (
                 hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:16]
@@ -683,33 +777,21 @@ def _classify_messages(
 
 
 def _threading_diagnostics(
-    messages: list[dict[str, Any]], carriers: dict[str, dict[str, Any]]
+    messages: list[dict[str, Any]], prepared_rules: dict[str, Any]
 ) -> dict[str, dict[str, int]]:
     """Tel threadingkenmerken van pakketmails zonder mailgegevens te tonen."""
     diagnostics: dict[str, dict[str, int]] = {}
-    status_keys = (
-        CARRIER_REGISTERED_SUBJECTS,
-        CARRIER_TRANSIT_SUBJECTS,
-        CARRIER_DELIVERING_SUBJECTS,
-        CARRIER_DELIVERED_SUBJECTS,
-        CARRIER_MISSED_SUBJECTS,
-    )
-    for carrier_id, rule in carriers.items():
-        senders = [str(value).casefold() for value in rule.get(CARRIER_SENDERS, [])]
+    messages_by_carrier = _messages_by_carrier(messages, prepared_rules)
+    for carrier_id, prepared in prepared_rules["carriers"].items():
         patterns = [
-            str(pattern).casefold()
-            for key in status_keys
-            for pattern in rule.get(key, [])
-        ]
-        custom_tracking_patterns = [
-            str(value) for value in rule.get(CARRIER_TRACKING_PATTERNS, [])
+            pattern
+            for values in prepared["status_patterns"].values()
+            for pattern in values
         ]
         recognized = 0
         explicitly_threaded = 0
         thread_groups: dict[str, list[str | None]] = {}
-        for message in messages:
-            if not _sender_matches(senders, message.get("senders", [])):
-                continue
+        for message in messages_by_carrier[carrier_id]:
             haystack = f"{message.get('subject', '')} {message.get('body', '')}"
             if not any(pattern in haystack for pattern in patterns):
                 continue
@@ -720,7 +802,9 @@ def _threading_diagnostics(
                 explicitly_threaded += 1
             if thread_id:
                 thread_groups.setdefault(thread_id, []).append(
-                    _extract_tracking_code(haystack, custom_tracking_patterns)
+                    _extract_compiled_tracking_code(
+                        haystack, prepared["tracking_patterns"]
+                    )
                 )
 
         multi_message_groups = [
@@ -751,7 +835,12 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         )
         self._cache: dict[str, Any] = {}
         self._cache_loaded = False
+        self._prepared_rules = _prepare_carrier_rules(
+            dict(entry.options.get(CONF_CARRIERS, {}))
+        )
+        self._last_messages: list[dict[str, Any]] = []
         self.threading_diagnostics: dict[str, dict[str, int]] = {}
+        self.scan_timings: dict[str, float] = {}
         self.consecutive_scan_failures = 0
         self.last_scan_error: str | None = None
         self.last_successful_scan: str | None = None
@@ -764,6 +853,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
+        scan_started = time.monotonic()
         if not self._cache_loaded:
             loaded = await self._store.async_load()
             self._cache = loaded if isinstance(loaded, dict) else {}
@@ -779,6 +869,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             ),
         }
         try:
+            fetch_started = time.monotonic()
             messages, new_cache, fetched = await self.hass.async_add_executor_job(
                 _fetch_recent_emails, scan_data, self._cache
             )
@@ -828,14 +919,15 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 fetched,
                 max(0, len(messages) - fetched),
             )
-        carriers: dict[str, dict[str, Any]] = self.entry.options.get(CONF_CARRIERS, {})
+        self._last_messages = messages
+        self.threading_diagnostics = {}
         self._purge_old_confirmations()
         confirmed_ids = set(self._cache.get("confirmed", {}))
         time_zone = dt_util.get_time_zone(self.hass.config.time_zone) or datetime.UTC
-        self.threading_diagnostics = _threading_diagnostics(messages, carriers)
+        classify_started = time.monotonic()
         result = _classify_messages(
             messages,
-            carriers,
+            self._prepared_rules,
             confirmed_ids,
             time_zone=time_zone,
             postal_code=self.entry.options.get(CONF_POSTAL_CODE, ""),
@@ -844,7 +936,23 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         result[SUMMARY_KEY]["delivery_statistics"] = self._delivery_statistics(
             time_zone
         )
+        self.scan_timings = {
+            "fetch_seconds": round(classify_started - fetch_started, 3),
+            "classify_seconds": round(time.monotonic() - classify_started, 3),
+            "total_seconds": round(time.monotonic() - scan_started, 3),
+        }
+        _LOGGER.debug("Pakket Tracker scantijden: %s", self.scan_timings)
         return result
+
+    async def async_get_threading_diagnostics(self) -> dict[str, dict[str, int]]:
+        """Build expensive threading diagnostics only when requested."""
+        if not self.threading_diagnostics:
+            self.threading_diagnostics = await self.hass.async_add_executor_job(
+                _threading_diagnostics,
+                self._last_messages,
+                self._prepared_rules,
+            )
+        return self.threading_diagnostics
 
     def _purge_old_confirmations(self) -> None:
         """Bewaar tombstones lang genoeg om oude mails niet terug te tonen."""
