@@ -500,6 +500,17 @@ def _prepare_carrier_rules(carriers: dict[str, dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _as_prepared_rules(rules: dict[str, Any]) -> dict[str, Any]:
+    """Accept raw carrier rules for helper compatibility and prepared rules in scans."""
+    if {
+        "carriers",
+        "exact_senders",
+        "domain_senders",
+    }.issubset(rules):
+        return rules
+    return _prepare_carrier_rules(rules)
+
+
 def _messages_by_carrier(
     messages: list[dict[str, Any]], prepared_rules: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -579,7 +590,7 @@ def _stable_direct_parcel_key(parcel: dict[str, Any], carrier: str) -> str:
 
 def _classify_messages(
     messages: list[dict[str, Any]],
-    prepared_rules: dict[str, Any],
+    rules: dict[str, Any],
     confirmed_ids: set[str] | None = None,
     time_zone: datetime.tzinfo = datetime.UTC,
     postal_code: str = "",
@@ -587,6 +598,7 @@ def _classify_messages(
     """Classificeer mails en dedupliceer waar een pakketcode beschikbaar is."""
     result: dict[str, dict[str, Any]] = {}
     confirmed_ids = confirmed_ids or set()
+    prepared_rules = _as_prepared_rules(rules)
     messages_by_carrier = _messages_by_carrier(messages, prepared_rules)
 
     for carrier_id, prepared in prepared_rules["carriers"].items():
@@ -777,10 +789,11 @@ def _classify_messages(
 
 
 def _threading_diagnostics(
-    messages: list[dict[str, Any]], prepared_rules: dict[str, Any]
+    messages: list[dict[str, Any]], rules: dict[str, Any]
 ) -> dict[str, dict[str, int]]:
     """Tel threadingkenmerken van pakketmails zonder mailgegevens te tonen."""
     diagnostics: dict[str, dict[str, int]] = {}
+    prepared_rules = _as_prepared_rules(rules)
     messages_by_carrier = _messages_by_carrier(messages, prepared_rules)
     for carrier_id, prepared in prepared_rules["carriers"].items():
         patterns = [
