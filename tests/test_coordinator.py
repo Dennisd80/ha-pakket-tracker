@@ -12,6 +12,7 @@ from custom_components.pakket_tracker.const import (
     CARRIER_SENDERS,
     CARRIER_TRACKING_PATTERNS,
     DOMAIN,
+    PRESET_CARRIERS,
 )
 from custom_components.pakket_tracker.coordinator import (
     PakketTrackerCoordinator,
