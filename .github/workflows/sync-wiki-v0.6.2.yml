@@ -50,31 +50,6 @@ jobs:
                       raise SystemExit(f"Expected text not found in {name}")
                   path.write_text(text.replace(old, new))
 
-          automation = Path("Automations.md")
-          text = automation.read_text()
-          old = '''        url: "/lovelace/pakketten"
-mode: single
-```
-
-## Maandoverzicht'''
-          new = '''        url: "/lovelace/pakketten"
-        actions:
-          - action: "PAKKET_TRACKER_CONFIRM_DELIVERED_JOUW_ENTRY_ID"
-            title: "Bezorging bevestigen"
-          - action: "PAKKET_TRACKER_KEEP_JOUW_ENTRY_ID"
-            title: "Nog niet ontvangen"
-mode: single
-```
-
-Vervang `JOUW_ENTRY_ID` door de configuratie-entry-id van Pakket Tracker. De
-dagelijkse melding van de integratie voegt deze knoppen zelf toe; gebruik dit
-voorbeeld alleen voor een eigen bezorgautomation.
-
-## Maandoverzicht'''
-          if new not in text:
-              if old not in text:
-                  raise SystemExit("Expected delivery automation not found")
-              automation.write_text(text.replace(old, new))
           PY
           if git diff --quiet; then
             exit 0
