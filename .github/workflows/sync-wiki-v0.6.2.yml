@@ -1,0 +1,86 @@
+name: Update wiki for v0.6.2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/sync-wiki-v0.6.2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update the published wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/Dennisd80/ha-pakket-tracker.wiki.git" wiki
+          cd wiki
+          python3 - <<'PY'
+          from pathlib import Path
+
+          changes = {
+              "Home.md": (
+                  """De actuele stabiele release is **0.5.1**.\n\nWelkom bij de wiki van Pakket Tracker NL.\n\nNieuw in 0.5.0: Track & Trace-links, optionele postcode, bezorgstatistieken\nper vervoerder en periode, plus signalering van afhaalpunten en langdurig\nongewijzigde pakketten.""",
+                  """De actuele stabiele release is **0.6.2**.\n\nWelkom bij de wiki van Pakket Tracker NL.\n\nNieuw in 0.6.2: Amazon-meldingen en de e-mail van de daadwerkelijke vervoerder\n(zoals DHL) worden bij exact dezelfde trackingcode samengevoegd. De\nvervoerderstatus blijft leidend en Amazon blijft als herkomst zichtbaar.\nDe knop **Bezorging bevestigen** bevestigt uitsluitend al afgeleverde\npakketten; zendingen onderweg blijven zichtbaar.""",
+              ),
+              "Automations.md": (
+                  """Gebruik de service `pakket_tracker.confirm_received` alleen wanneer je vanuit\neen eigen automation alle zichtbare pakketten wilt bevestigen.""",
+                  """Gebruik de service `pakket_tracker.confirm_received` alleen wanneer je vanuit\neen eigen automation alle zichtbare pakketten wilt bevestigen. De knop\n**Bezorging bevestigen** in de dagelijkse melding bevestigt sinds v0.6.2\nalleen zendingen met status `delivered`; pakketten onderweg blijven openstaan.""",
+              ),
+              "Carriers.md": (
+                  """De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee.""",
+                  """De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee.\n\n## Amazon en DHL\n\nAmazon verstuurt soms zowel een eigen statusmail als een mail van de\ndaadwerkelijke bezorger. Bij een exact gelijke DHL-trackingcode (onder andere\n`JJD…` en `JVGL…`) behandelt Pakket Tracker dit als één zending. De DHL-status\nen -trackinglink krijgen voorrang; `Amazon.nl` blijft als herkomst zichtbaar.\nZonder gedeelde barcode worden zendingen bewust niet samengevoegd.""",
+              ),
+              "Troubleshooting.md": (
+                  """Controleer of de vervoerder een trackingcode in de mail zet. Statusmails in dezelfde thread met precies één code worden samengevoegd. Threads met meerdere codes worden bewust niet samengevoegd om verschillende pakketten niet kwijt te raken.""",
+                  """Controleer of de vervoerder een trackingcode in de mail zet. Statusmails in dezelfde thread met precies één code worden samengevoegd. Threads met meerdere codes worden bewust niet samengevoegd om verschillende pakketten niet kwijt te raken.\n\n### Amazon en DHL worden nog afzonderlijk getoond\n\nDe automatische samenvoeging werkt alleen wanneer beide mails exact dezelfde\nDHL-trackingcode bevatten. Controleer of de Amazon-mail een code begint met\n`JJD` of `JVGL` bevat en of DHL diezelfde code in de eigen mail zet. Een\nAmazon-bestelnummer is geen DHL-trackingcode en wordt niet gebruikt voor\ndeduplicatie, om verschillende zendingen niet onterecht samen te voegen.""",
+              ),
+          }
+
+          for name, (old, new) in changes.items():
+              path = Path(name)
+              text = path.read_text()
+              if new not in text:
+                  if old not in text:
+                      raise SystemExit(f"Expected text not found in {name}")
+                  path.write_text(text.replace(old, new))
+
+          automation = Path("Automations.md")
+          text = automation.read_text()
+          old = '''        url: "/lovelace/pakketten"
+mode: single
+```
+
+## Maandoverzicht'''
+          new = '''        url: "/lovelace/pakketten"
+        actions:
+          - action: "PAKKET_TRACKER_CONFIRM_DELIVERED_JOUW_ENTRY_ID"
+            title: "Bezorging bevestigen"
+          - action: "PAKKET_TRACKER_KEEP_JOUW_ENTRY_ID"
+            title: "Nog niet ontvangen"
+mode: single
+```
+
+Vervang `JOUW_ENTRY_ID` door de configuratie-entry-id van Pakket Tracker. De
+dagelijkse melding van de integratie voegt deze knoppen zelf toe; gebruik dit
+voorbeeld alleen voor een eigen bezorgautomation.
+
+## Maandoverzicht'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("Expected delivery automation not found")
+              automation.write_text(text.replace(old, new))
+          PY
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Home.md Automations.md Carriers.md Troubleshooting.md
+          git commit -m "Update wiki for Pakket Tracker NL v0.6.2"
+          git push
