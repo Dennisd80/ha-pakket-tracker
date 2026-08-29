@@ -760,6 +760,11 @@ def _classify_messages(
                     "id": package["id"],
                     "carrier": rule.get(CARRIER_NAME, carrier_id),
                     "carrier_id": carrier_id,
+                    "merchant": (
+                        rule.get(CARRIER_NAME, carrier_id)
+                        if carrier_id == "amazon_nl"
+                        else None
+                    ),
                     "barcode": package["tracking_code"],
                     "sender": None,
                     "receiver": None,
@@ -1131,6 +1136,19 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             for parcel in values.get("parcels", []):
                 barcode = _normalize_code(parcel.get("barcode"))
                 dedupe_key = f"barcode:{barcode}" if barcode else parcel["id"]
+                existing = merged.get(dedupe_key)
+                if existing and existing.get("carrier_id") != parcel.get("carrier_id"):
+                    # Een Amazon-mail met exact dezelfde barcode als een
+                    # vervoerdermail beschrijft dezelfde zending. De fysieke
+                    # vervoerder levert de status; Amazon blijft de herkomst.
+                    if existing.get("carrier_id") == "amazon_nl":
+                        parcel = {
+                            **parcel,
+                            "merchant": existing.get("merchant") or "Amazon.nl",
+                        }
+                    elif parcel.get("carrier_id") == "amazon_nl":
+                        existing["merchant"] = parcel.get("merchant") or "Amazon.nl"
+                        continue
                 merged[dedupe_key] = parcel
 
         for parcel in self._direct_parcels():
@@ -1200,10 +1218,14 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             "parcels": parcels,
         }
 
-    async def async_confirm_received(self) -> int:
-        """Verberg alle huidige pakketten en bewaar tombstones tegen herdetectie."""
+    async def async_confirm_received(self, delivered_only: bool = False) -> int:
+        """Bevestig pakketten; desgewenst uitsluitend al bezorgde zendingen."""
         summary = (self.data or {}).get(SUMMARY_KEY, {})
         parcels = summary.get("parcels", [])
+        if delivered_only:
+            parcels = [
+                parcel for parcel in parcels if parcel.get("status") == "delivered"
+            ]
         if not parcels:
             return 0
         confirmed = self._cache.setdefault("confirmed", {})

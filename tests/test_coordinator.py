@@ -136,6 +136,68 @@ async def test_confirm_received_only_records_delivered_once(hass, monkeypatch):
     assert coordinator._cache["delivered_totals"] == {"test": 1}
 
 
+@pytest.mark.asyncio
+async def test_confirm_delivered_only_keeps_in_transit_parcels(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = PakketTrackerCoordinator(hass, entry)
+    coordinator.data = {
+        "_summary": {
+            "parcels": [
+                {"id": "p1", "carrier_id": "test", "status": "in_transit"},
+                {"id": "p2", "carrier_id": "test", "status": "delivered"},
+            ]
+        }
+    }
+
+    async def _save(_cache):
+        return None
+
+    async def _refresh():
+        return None
+
+    monkeypatch.setattr(coordinator._store, "async_save", _save)
+    monkeypatch.setattr(coordinator, "async_request_refresh", _refresh)
+
+    assert await coordinator.async_confirm_received(delivered_only=True) == 1
+    assert "p2" in coordinator._cache["confirmed"]
+    assert "p1" not in coordinator._cache["confirmed"]
+
+
+def test_amazon_dhl_same_barcode_merges_and_prefers_dhl():
+    barcode = "JJD12345678901234"
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["verzending-volgen@amazon.nl"],
+                "subject": "Je bestelling is bezorgd",
+                "body": f"DHL tracking: {barcode}",
+                "message_id": "<amazon@example.com>",
+                "timestamp": 1.0,
+            },
+            {
+                "uid": "2",
+                "senders": ["noreply@dhl.nl"],
+                "subject": "Je pakket is afgeleverd",
+                "body": f"Tracking: {barcode}",
+                "message_id": "<dhl@example.com>",
+                "timestamp": 2.0,
+            },
+        ],
+        {
+            "amazon_nl": PRESET_CARRIERS["amazon_nl"],
+            "dhl_parcel_nl": PRESET_CARRIERS["dhl_parcel_nl"],
+        },
+    )
+    coordinator = type("Coordinator", (), {"_direct_parcels": lambda self: []})()
+
+    summary = PakketTrackerCoordinator._build_summary(coordinator, result, set())
+
+    assert summary["total"] == 1
+    assert summary["parcels"][0]["carrier_id"] == "dhl_parcel_nl"
+    assert summary["parcels"][0]["merchant"] == "Amazon.nl"
+
+
 def test_parcel_aggregator_entity_can_be_renamed(hass):
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     registry = er.async_get(hass)

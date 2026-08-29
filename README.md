@@ -21,7 +21,8 @@ Vereist Home Assistant 2025.1 of nieuwer.
 - Canoniek pakketoverzicht met deduplicatie op trackingcode.
 - Optionele samenvoeging met `Parcel Aggregator`-sensoren van losse
   vervoerderintegraties.
-- Dagelijkse actionable notification met de vraag of alles ontvangen is.
+- Dagelijkse actionable notification waarmee alleen reeds bezorgde pakketten
+  kunnen worden bevestigd; zendingen onderweg blijven zichtbaar.
 - Herstelde sensorwaarden tijdens Home Assistant-start en niet-blokkerende
   mailboxscan.
 

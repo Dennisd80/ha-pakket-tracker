@@ -156,6 +156,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         action = event.data.get("action")
         if action == f"PAKKET_TRACKER_CONFIRM_{entry.entry_id}":
             await coordinator.async_confirm_received()
+        elif action == f"PAKKET_TRACKER_CONFIRM_DELIVERED_{entry.entry_id}":
+            await coordinator.async_confirm_received(delivered_only=True)
         elif action == f"PAKKET_TRACKER_KEEP_{entry.entry_id}":
             return
 

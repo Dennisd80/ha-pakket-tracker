@@ -47,7 +47,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
-PRESET_VERSION = 4
+PRESET_VERSION = 5
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -105,7 +105,13 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_DELIVERING_SUBJECTS: ["onderweg voor bezorging"],
         CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
         CARRIER_MISSED_SUBJECTS: [],
-        CARRIER_TRACKING_PATTERNS: [],
+        # Amazon vermeldt bij uitbestede bezorging vaak de daadwerkelijke
+        # DHL-code. Daarmee kunnen de Amazon- en DHL-statusmails veilig op
+        # exact dezelfde barcode worden samengevoegd.
+        CARRIER_TRACKING_PATTERNS: [
+            r"\b(JJD\d{14,25})\b",
+            r"\b(JVGL[A-Z0-9]{8,30})\b",
+        ],
         CARRIER_TRACKING_URL: "https://www.amazon.nl/gp/your-account/order-details?ie=UTF8&orderID={code}",
     },
     "postnl": {
