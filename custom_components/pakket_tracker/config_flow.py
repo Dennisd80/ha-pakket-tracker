@@ -17,6 +17,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 
 from .const import (
     CARRIER_DELIVERED_SUBJECTS,
@@ -73,6 +74,29 @@ def _split_lines(value: str) -> list[str]:
 
 def _join_lines(values: list[str]) -> str:
     return "\n".join(values)
+
+
+def _notify_service_selector(hass: Any, default: str) -> selector.SelectSelector:
+    """Return available notification services as a selectable list."""
+    options = [
+        selector.SelectOptionDict(value="", label="Geen dagelijkse melding"),
+    ]
+    options.extend(
+        selector.SelectOptionDict(
+            value=f"notify.{service}", label=f"notify.{service}"
+        )
+        for service in sorted(hass.services.async_services().get("notify", {}))
+        if service != "send_message"
+    )
+    if default and default not in {option["value"] for option in options}:
+        options.append(selector.SelectOptionDict(value=default, label=default))
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=options,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+            custom_value=True,
+        )
+    )
 
 
 def _split_regex_lines(value: str) -> list[str]:
@@ -376,7 +400,12 @@ class PakketTrackerOptionsFlow(config_entries.OptionsFlow):
                     default=(user_input or self.config_entry.options).get(
                         CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
                     ),
-                ): str,
+                ): _notify_service_selector(
+                    self.hass,
+                    (user_input or self.config_entry.options).get(
+                        CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE
+                    ),
+                ),
             }
         )
         return self.async_show_form(
