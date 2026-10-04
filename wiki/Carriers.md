@@ -1,8 +1,8 @@
 # Vervoerders en aangepaste regels
 
-De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee. Sinds 0.8.0 zijn ook Dragonfly Shipping NL, Ampère, Vinted Go, Dynalogic, Mondial Relay, InPost en Cycloon opgenomen.
+De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee. Sinds 0.8.1 zijn ook Dragonfly Shipping NL, Ampère, Vinted Go, Dynalogic, Mondial Relay, InPost en Cycloon opgenomen.
 
-## Nieuwe Nederlandse vervoerders in 0.8.0
+## Nieuwe Nederlandse vervoerders in 0.8.1
 
 Dragonfly is gebaseerd op berichten uit een echte mailbox: afzender `notifications@nl.dragonflyinternational.com`, de onderwerpen voor ontvangen, bezorging vandaag en bezorgd, en een gedeelde `AM…`-trackingcode uit de link. Daardoor worden opeenvolgende statusmails voor dezelfde code samengevoegd. Mondial Relay is eveneens met echte mail bevestigd: `noreply@mondialrelay.fr`, onderwerp `Behandeling van uw pakket`.
 
