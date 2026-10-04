@@ -25,6 +25,10 @@ Vereist Home Assistant 2025.1 of nieuwer.
   kunnen worden bevestigd; zendingen onderweg blijven zichtbaar.
 - Herstelde sensorwaarden tijdens Home Assistant-start en niet-blokkerende
   mailboxscan.
+- Optionele snellere scan na een passend `imap_content`-event van Home Assistants
+  ingebouwde IMAP-integratie; de periodieke scan blijft actief.
+- Korte statusgeschiedenis per zichtbaar pakket en een aparte mailboxstatussensor.
+- Een voorbeeldweergave voor Lovelace in `examples/pakketoverzicht.yaml`.
 
 Bij een upgrade worden nieuwe ingebouwde vervoerders eenmalig toegevoegd aan
 bestaande configuraties. Eigen namen en regels blijven behouden. Een
@@ -68,6 +72,33 @@ Beschikbare services:
 - `pakket_tracker.confirm_received`: markeert de huidige pakketten als
   ontvangen en voorkomt herdetectie vanuit recente mails.
 - `pakket_tracker.keep_parcels`: laat de huidige pakketten openstaan.
+
+Na een succesvolle scan publiceert de integratie pakketgebeurtenissen:
+`pakket_tracker_parcel_registered`, `pakket_tracker_parcel_status_changed`,
+`pakket_tracker_parcel_delivered` en
+`pakket_tracker_parcel_delivery_time_changed`. De gebeurtenis bevat de
+pakketvelden en `entry_id`; status- en tijdwijzigingen bevatten ook de oude en
+nieuwe waarden. De eerste scan legt alleen een uitgangspunt vast en meldt
+bestaande pakketten niet opnieuw. Herhaalde scans en een herstart geven geen
+dubbele gebeurtenis zolang de lokale opslag beschikbaar is.
+De pakketlijst bevat maximaal tien recente statusovergangen per pakket in
+`history`. Bestaande pakketten beginnen met een lege geschiedenis; oude mails
+worden hiervoor niet als gebeurtenissen nagespeeld.
+
+De nieuwe sensor **Pakket Tracker Mailbox status** toont `wachten`, `goed` of
+`fout`, plus de laatste geslaagde scan en scantijden. Kies voor de voorbeeldkaart
+in `examples/pakketoverzicht.yaml` de echte entity-ID's uit jouw installatie.
+
+### Snellere updates met IMAP Push
+
+Als je dezelfde server, gebruikersnaam en map ook via Home Assistants ingebouwde
+IMAP-integratie koppelt, reageert Pakket Tracker op nieuwe `imap_content`-events
+van bekende afzenders. De ingebouwde IMAP-integratie gebruikt IMAP Push waar
+de server dat ondersteunt. Pakket Tracker gebruikt het event alleen als signaal
+om de eigen mailboxscan te starten; er wordt geen mailinhoud uit het event
+opgeslagen. Zonder tweede IMAP-configuratie blijft het huidige scaninterval
+werken. Stel in de ingebouwde IMAP-integratie bij voorkeur een aparte pakketmap
+in, zodat andere mail niet op de eventbus verschijnt.
 
 ## Combineren met losse vervoerderintegraties
 

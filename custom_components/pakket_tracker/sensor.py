@@ -103,6 +103,8 @@ async def async_setup_entry(
         entities.append(
             PakketTrackerSummarySensor(coordinator, entry, summary_key, name, icon)
         )
+    expected_unique_ids.add(f"{entry.entry_id}_scan_health")
+    entities.append(PakketTrackerHealthSensor(coordinator, entry))
     for carrier_id, rule in carriers.items():
         carrier_name = rule.get(CARRIER_NAME, carrier_id)
         for period, label in DELIVERY_STAT_PERIODS.items():
@@ -270,6 +272,49 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
         }
 
 
+class PakketTrackerHealthSensor(CoordinatorEntity):
+    """Laat de huidige scanstatus zonder mailinhoud zien."""
+
+    _attr_icon = "mdi:email-check-outline"
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_scan_health"
+        self._attr_name = "Pakket Tracker Mailbox status"
+        self._entry_id = entry.entry_id
+
+    @property
+    def available(self) -> bool:
+        """Blijf zichtbaar wanneer juist de mailboxscan faalt."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        if self.coordinator.last_scan_error:
+            return "fout"
+        if self.coordinator.last_successful_scan:
+            return "goed"
+        return "wachten"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "last_successful_scan": self.coordinator.last_successful_scan,
+            "consecutive_scan_failures": self.coordinator.consecutive_scan_failures,
+            "scan_timings_seconds": self.coordinator.scan_timings,
+        }
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._entry_id)},
+            "name": "Pakket Tracker NL",
+            "manufacturer": "Pakket Tracker Community",
+            "model": "IMAP Pakket Monitor",
+            "sw_version": VERSION,
+        }
+
+
 class PakketTrackerDeliveryStatsSensor(CoordinatorEntity, RestoreSensor):
     """Persistente bezorgteller per vervoerder en periode."""
 
@@ -306,8 +351,10 @@ class PakketTrackerDeliveryStatsSensor(CoordinatorEntity, RestoreSensor):
 
     @property
     def native_value(self) -> int:
-        stats = (self.coordinator.data or {}).get(SUMMARY_KEY, {}).get(
-            "delivery_statistics", {}
+        stats = (
+            (self.coordinator.data or {})
+            .get(SUMMARY_KEY, {})
+            .get("delivery_statistics", {})
         )
         value = stats.get(self._carrier_id, {}).get(self._period, 0)
         self._attr_native_value = value

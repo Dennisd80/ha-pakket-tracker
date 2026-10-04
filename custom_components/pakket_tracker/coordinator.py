@@ -68,7 +68,7 @@ _IMAP_FETCH_BATCH_SIZE = 100
 _UIDVALIDITY_RE = re.compile(rb"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
 _MESSAGE_ID_RE = re.compile(r"<[^<>]+>")
 _FETCH_UID_RE = re.compile(rb"\bUID\s+(\d+)", re.IGNORECASE)
-_CACHE_PARSER_VERSION = 3
+_CACHE_PARSER_VERSION = 4
 _MAX_CONSECUTIVE_SCAN_FAILURES = 3
 
 # Veelgebruikte Nederlandse en internationale trackingformaten plus generieke
@@ -153,6 +153,8 @@ def _timestamp_after(value: object, cutoff: datetime.datetime) -> bool:
     except (TypeError, ValueError):
         return False
     return timestamp >= cutoff
+
+
 def _planned_delivery_window(
     haystack: str,
     timestamp: float,
@@ -164,10 +166,9 @@ def _planned_delivery_window(
     if "wordt morgen bezorgd" not in haystack:
         return None, None
 
-    delivery_date = (
-        datetime.datetime.fromtimestamp(timestamp, tz=time_zone).date()
-        + datetime.timedelta(days=1)
-    )
+    delivery_date = datetime.datetime.fromtimestamp(
+        timestamp, tz=time_zone
+    ).date() + datetime.timedelta(days=1)
     planned_from = datetime.datetime.combine(
         delivery_date, datetime.time.min, tzinfo=time_zone
     )
@@ -177,17 +178,38 @@ def _planned_delivery_window(
     return planned_from.isoformat(), planned_to.isoformat()
 
 
-def _strip_html(value: str) -> str:
-    """Maak HTML geschikt voor lokale substringmatching."""
-    text = re.sub(
+def _safe_html(value: str) -> str:
+    """Verwijder script- en stijltekst voordat we links of woorden lezen."""
+    return re.sub(
         r"<(script|style)[^>]*>.*?</\1>",
         " ",
         value,
         flags=re.DOTALL | re.IGNORECASE,
     )
+
+
+def _html_links(value: str) -> list[str]:
+    """Behoud alleen begrensde http(s)-links uit pakketmails."""
+    # Alleen HTML-mails zetten de barcode soms uitsluitend in een link.
+    # Houd de linktekst en veilige http(s)-doelen beschikbaar voor de bestaande
+    # vervoerder-specifieke regexen; haal geen URL op.
+    return [
+        html_lib.unescape(match.group(1))
+        for match in re.finditer(
+            r'<a\b[^>]*\bhref\s*=\s*["\'](https?://[^"\']{1,500})["\']',
+            _safe_html(value),
+            flags=re.IGNORECASE,
+        )
+    ][:50]
+
+
+def _strip_html(value: str) -> str:
+    """Maak HTML geschikt voor lokale substringmatching."""
+    text = _safe_html(value)
+    links = _html_links(value)
     text = re.sub(r"<[^>]+>", " ", text)
     text = html_lib.unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", f"{text} {' '.join(links)}").strip()
 
 
 def _get_body_text(message: email.message.Message) -> str:
@@ -217,7 +239,11 @@ def _get_body_text(message: email.message.Message) -> str:
         elif content_type == "text/html" and html is None:
             html = text
 
-    body = plain if plain is not None else _strip_html(html or "")
+    body = (
+        f"{plain} {' '.join(_html_links(html or ''))}"
+        if plain is not None
+        else _strip_html(html or "")
+    )
     return body[:_MAX_BODY_CHARS]
 
 
@@ -383,6 +409,8 @@ def _fetch_recent_emails(
             "confirmed": cache.get("confirmed", {}),
             "delivery_events": cache.get("delivery_events", []),
             "delivered_totals": cache.get("delivered_totals", {}),
+            "parcel_event_snapshot": cache.get("parcel_event_snapshot"),
+            "parcel_history": cache.get("parcel_history", {}),
         }
         messages = [current_messages[uid] for uid in uids if uid in current_messages]
         return messages, new_cache, fetched
@@ -421,13 +449,10 @@ def _extract_tracking_code(
             value = match.group(1) if match.lastindex else match.group(0)
             # Broad numeric custom patterns need a nearby tracking label. This
             # prevents order numbers, dates and phone numbers becoming parcels.
-            if (
-                r"\d" in raw_pattern
-                and not re.search(
-                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
-                    raw_pattern,
-                    re.IGNORECASE,
-                )
+            if r"\d" in raw_pattern and not re.search(
+                r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                raw_pattern,
+                re.IGNORECASE,
             ):
                 context = text[max(0, match.start() - 48) : match.start()]
                 if not re.search(
@@ -540,13 +565,10 @@ def _extract_compiled_tracking_code(
     for raw_pattern, pattern in carrier_patterns:
         if match := pattern.search(text):
             value = match.group(1) if match.lastindex else match.group(0)
-            if (
-                r"\d" in raw_pattern
-                and not re.search(
-                    r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
-                    raw_pattern,
-                    re.IGNORECASE,
-                )
+            if r"\d" in raw_pattern and not re.search(
+                r"tracking|barcode|zending|shipment|parcel|trunkrsnummer|awb",
+                raw_pattern,
+                re.IGNORECASE,
             ):
                 context = text[max(0, match.start() - 48) : match.start()]
                 if not re.search(
@@ -954,6 +976,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         result[SUMMARY_KEY]["delivery_statistics"] = self._delivery_statistics(
             time_zone
         )
+        await self._publish_parcel_changes(result[SUMMARY_KEY]["parcels"])
         self.scan_timings = {
             "fetch_seconds": round(classify_started - fetch_started, 3),
             "classify_seconds": round(time.monotonic() - classify_started, 3),
@@ -961,6 +984,102 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         }
         _LOGGER.debug("Pakket Tracker scantijden: %s", self.scan_timings)
         return result
+
+    async def _publish_parcel_changes(self, parcels: list[dict[str, Any]]) -> None:
+        """Publish changes once per scan, with a restart-safe baseline."""
+
+        def parcel_key(parcel: dict[str, Any]) -> str:
+            barcode = _normalize_code(parcel.get("barcode"))
+            return f"barcode:{barcode}" if barcode else str(parcel.get("id") or "")
+
+        current = {
+            parcel_key(parcel): {
+                "status": parcel.get("status"),
+                "planned_from": parcel.get("planned_from"),
+                "planned_to": parcel.get("planned_to"),
+            }
+            for parcel in parcels
+            if parcel.get("id")
+        }
+        old_history = self._cache.get("parcel_history")
+        history = old_history if isinstance(old_history, dict) else {}
+        previous = self._cache.get("parcel_event_snapshot")
+        if not isinstance(previous, dict):
+            for parcel in parcels:
+                parcel.setdefault("history", [])
+            self._cache["parcel_event_snapshot"] = current
+            self._cache["parcel_history"] = {}
+            try:
+                await self._store.async_save(self._cache)
+            except OSError as err:
+                self._cache.pop("parcel_event_snapshot", None)
+                self._cache.pop("parcel_history", None)
+                _LOGGER.warning("Pakketgebeurtenissen niet opgeslagen: %s", err)
+            return
+        changes: list[tuple[str, dict[str, Any]]] = []
+        updated_history: dict[str, list[dict[str, Any]]] = {}
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        for parcel in parcels:
+            parcel_id = parcel_key(parcel)
+            if not parcel_id:
+                continue
+            old = previous.get(parcel_id)
+            prior_entries = history.get(parcel_id, [])
+            entries = (
+                list(prior_entries[-9:]) if isinstance(prior_entries, list) else []
+            )
+            payload = {**parcel, "entry_id": self.entry.entry_id}
+            if not isinstance(old, dict):
+                changes.append(("pakket_tracker_parcel_registered", payload))
+                entries.append({"timestamp": now, "status": parcel.get("status")})
+            elif old.get("status") != parcel.get("status"):
+                event = (
+                    "pakket_tracker_parcel_delivered"
+                    if parcel.get("status") == "delivered"
+                    else "pakket_tracker_parcel_status_changed"
+                )
+                changes.append(
+                    (
+                        event,
+                        {
+                            **payload,
+                            "old_status": old.get("status"),
+                            "new_status": parcel.get("status"),
+                        },
+                    )
+                )
+                entries.append({"timestamp": now, "status": parcel.get("status")})
+            if isinstance(old, dict) and (
+                old.get("planned_from") != parcel.get("planned_from")
+                or old.get("planned_to") != parcel.get("planned_to")
+            ):
+                changes.append(
+                    (
+                        "pakket_tracker_parcel_delivery_time_changed",
+                        {
+                            **payload,
+                            "old_planned_from": old.get("planned_from"),
+                            "old_planned_to": old.get("planned_to"),
+                            "new_planned_from": parcel.get("planned_from"),
+                            "new_planned_to": parcel.get("planned_to"),
+                        },
+                    )
+                )
+            updated_history[parcel_id] = entries[-10:]
+            if not parcel.get("history"):
+                parcel["history"] = entries[-10:]
+        if current != previous:
+            self._cache["parcel_event_snapshot"] = current
+            self._cache["parcel_history"] = updated_history
+            try:
+                await self._store.async_save(self._cache)
+            except OSError as err:
+                self._cache["parcel_event_snapshot"] = previous
+                self._cache["parcel_history"] = history
+                _LOGGER.warning("Pakketgebeurtenissen niet opgeslagen: %s", err)
+                return
+        for event_type, payload in changes:
+            self.hass.bus.async_fire(event_type, payload)
 
     async def async_get_threading_diagnostics(self) -> dict[str, dict[str, int]]:
         """Build expensive threading diagnostics only when requested."""
@@ -1020,6 +1139,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 and str(event.get("timestamp", ""))
                 and _timestamp_after(event.get("timestamp"), event_cutoff)
             ]
+
     def _delivery_statistics(
         self, time_zone: datetime.tzinfo = datetime.UTC
     ) -> dict[str, dict[str, int]]:

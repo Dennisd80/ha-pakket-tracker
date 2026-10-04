@@ -10,6 +10,7 @@ import pytest
 from homeassistant.components.sensor import SensorStateClass
 
 from custom_components.pakket_tracker import (
+    _matching_imap_push,
     _parse_confirmation_time,
     _upgrade_preset_options,
 )
@@ -36,6 +37,7 @@ from custom_components.pakket_tracker.coordinator import (
     _parse_message,
     _sender_matches,
     _stable_direct_parcel_key,
+    _strip_html,
     _threading_diagnostics,
 )
 from custom_components.pakket_tracker.sensor import (
@@ -86,17 +88,65 @@ def test_sender_matching_is_exact_and_supports_domains():
     assert _sender_matches(["@example.com"], ["pakket@example.com"])
 
 
+def test_imap_push_matches_only_same_mailbox_and_known_sender():
+    entry = SimpleNamespace(
+        data={
+            "imap_server": "imap.example.com",
+            "username": "user@example.com",
+            "folder": "Pakketten",
+        },
+        options={"carriers": {"demo": {"senders": ["post@example.com"]}}},
+    )
+    event = {
+        "initial": True,
+        "server": "imap.example.com",
+        "username": "user@example.com",
+        "folder": "Pakketten",
+        "sender": "Post <post@example.com>",
+    }
+    assert _matching_imap_push(event, entry)
+    assert not _matching_imap_push({**event, "initial": False}, entry)
+    assert not _matching_imap_push({**event, "folder": "INBOX"}, entry)
+    assert not _matching_imap_push({**event, "sender": "other@example.com"}, entry)
+
+
 def test_extract_tracking_code():
     assert _extract_tracking_code("Je barcode is 3SABCDEFGHIJKL") == "3SABCDEFGHIJKL"
     assert _extract_tracking_code("Je afspraak is op 20260804") is None
 
 
+def test_html_only_tracking_link_keeps_barcode_without_fetching_url():
+    text = _strip_html(
+        '<a href="https://tracking.example.com/?barcode=3SABCDEFGHIJKL">'
+        "Volg je pakket</a>"
+    )
+    assert _extract_tracking_code(text) == "3SABCDEFGHIJKL"
+
+
+def test_multipart_message_keeps_tracking_link_from_html_part():
+    raw = (
+        b"From: pakket@example.com\r\n"
+        b"Subject: Je pakket is onderweg\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/alternative; boundary="x"\r\n\r\n'
+        b"--x\r\nContent-Type: text/plain\r\n\r\nVolg je pakket\r\n"
+        b"--x\r\nContent-Type: text/html\r\n\r\n"
+        b'<a href="https://tracking.example.com/?barcode=3SABCDEFGHIJKL">'
+        b"Volg je pakket</a>\r\n--x--\r\n"
+    )
+    message = _parse_message("1", raw)
+    assert _extract_tracking_code(message["body"]) == "3SABCDEFGHIJKL"
+
+
 def test_build_tracking_url_uses_code_and_optional_postal_code():
-    assert _build_tracking_url(
-        "3SABC123",
-        {"tracking_url": "https://example.test/{code}?pc={postal_code}"},
-        "3146 CH",
-    ) == "https://example.test/3SABC123?pc=3146%20CH"
+    assert (
+        _build_tracking_url(
+            "3SABC123",
+            {"tracking_url": "https://example.test/{code}?pc={postal_code}"},
+            "3146 CH",
+        )
+        == "https://example.test/3SABC123?pc=3146%20CH"
+    )
 
 
 @pytest.mark.parametrize(
@@ -144,12 +194,13 @@ def test_tracking_code_normalization_removes_spaces_and_hyphens():
 
 
 def test_broad_numeric_tracking_pattern_requires_context():
-    assert _extract_tracking_code(
-        "Order 123456789012 placed", [r"\b(\d{12})\b"]
-    ) is None
-    assert _extract_tracking_code(
-        "tracking number 123456789012", [r"\b(\d{12})\b"]
-    ) == "123456789012"
+    assert (
+        _extract_tracking_code("Order 123456789012 placed", [r"\b(\d{12})\b"]) is None
+    )
+    assert (
+        _extract_tracking_code("tracking number 123456789012", [r"\b(\d{12})\b"])
+        == "123456789012"
+    )
 
 
 def test_direct_parcel_fallback_ignores_status_changes():
