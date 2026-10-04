@@ -1,7 +1,7 @@
 """Constanten voor Pakket Tracker NL."""
 
 DOMAIN = "pakket_tracker"
-VERSION = "0.7.1"
+VERSION = "0.8.0"
 
 # Config entry data (IMAP-account)
 CONF_IMAP_SERVER = "imap_server"
@@ -47,7 +47,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
-PRESET_VERSION = 5
+PRESET_VERSION = 6
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -343,5 +343,80 @@ PRESET_CARRIERS: dict[str, dict] = {
             "bezorging mislukt",
         ],
         CARRIER_TRACKING_PATTERNS: [],
+    },
+    "dragonfly_nl": {
+        CARRIER_NAME: "Dragonfly Shipping NL",
+        CARRIER_SENDERS: ["notifications@nl.dragonflyinternational.com"],
+        CARRIER_REGISTERED_SUBJECTS: ["we hebben je pakket ontvangen"],
+        CARRIER_TRANSIT_SUBJECTS: [],
+        CARRIER_DELIVERING_SUBJECTS: [
+            "we bezorgen je pakket vandaag",
+            "vandaag bezorgen we je pakket",
+            "we staan binnen een uur voor je deur",
+        ],
+        CARRIER_DELIVERED_SUBJECTS: ["we hebben je pakket bezorgd"],
+        CARRIER_MISSED_SUBJECTS: [],
+        CARRIER_TRACKING_PATTERNS: [r"\b(AM[A-Z0-9]{15})\b"],
+        CARRIER_TRACKING_URL: "https://dragonflyshipping.nl/nl/volg-je-pakket/?tracking-id={code}",
+    },
+    "ampere": {
+        CARRIER_NAME: "Ampère",
+        CARRIER_SENDERS: ["@amperebezorgt.nl"],
+        CARRIER_REGISTERED_SUBJECTS: ["pakket aangemeld"],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket is onderweg"],
+        CARRIER_DELIVERING_SUBJECTS: ["vandaag bezorgd", "bezorger is onderweg"],
+        CARRIER_DELIVERED_SUBJECTS: ["pakket is bezorgd"],
+        CARRIER_MISSED_SUBJECTS: ["niet kunnen bezorgen"],
+        CARRIER_TRACKING_PATTERNS: [],
+    },
+    "vinted_go": {
+        CARRIER_NAME: "Vinted Go",
+        CARRIER_SENDERS: ["@vintedgo.com"],
+        CARRIER_REGISTERED_SUBJECTS: ["pakket aangemeld", "parcel registered"],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg", "parcel on its way"],
+        CARRIER_DELIVERING_SUBJECTS: ["klaar om af te halen", "ready for pickup"],
+        CARRIER_DELIVERED_SUBJECTS: ["pakket opgehaald", "parcel delivered"],
+        CARRIER_MISSED_SUBJECTS: ["niet afgehaald", "pickup expired"],
+        CARRIER_TRACKING_PATTERNS: [],
+    },
+    "dynalogic": {
+        CARRIER_NAME: "Dynalogic",
+        CARRIER_SENDERS: ["@dynalogic.eu"],
+        CARRIER_REGISTERED_SUBJECTS: ["afspraakbevestiging"],
+        CARRIER_TRANSIT_SUBJECTS: ["zending onderweg"],
+        CARRIER_DELIVERING_SUBJECTS: ["bezorging vandaag", "bezorger onderweg"],
+        CARRIER_DELIVERED_SUBJECTS: ["zending afgeleverd", "pakket bezorgd"],
+        CARRIER_MISSED_SUBJECTS: ["niet thuis", "bezorging mislukt"],
+        CARRIER_TRACKING_PATTERNS: [],
+    },
+    "mondial_relay": {
+        CARRIER_NAME: "Mondial Relay",
+        CARRIER_SENDERS: ["noreply@mondialrelay.fr"],
+        CARRIER_REGISTERED_SUBJECTS: ["behandeling van uw pakket"],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg", "colis en cours"],
+        CARRIER_DELIVERING_SUBJECTS: ["klaar om af te halen", "disponible en point relais"],
+        CARRIER_DELIVERED_SUBJECTS: ["pakket afgehaald", "colis livré"],
+        CARRIER_MISSED_SUBJECTS: ["niet afgehaald", "colis retourné"],
+        CARRIER_TRACKING_PATTERNS: [],
+    },
+    "inpost": {
+        CARRIER_NAME: "InPost",
+        CARRIER_SENDERS: ["@inpost.eu", "@inpost.nl"],
+        CARRIER_REGISTERED_SUBJECTS: ["pakket aangemeld", "parcel registered"],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg", "parcel on its way"],
+        CARRIER_DELIVERING_SUBJECTS: ["klaar om af te halen", "ready to collect"],
+        CARRIER_DELIVERED_SUBJECTS: ["pakket opgehaald", "parcel delivered"],
+        CARRIER_MISSED_SUBJECTS: ["niet afgehaald", "pickup expired"],
+        CARRIER_TRACKING_PATTERNS: [],
+    },
+    "cycloon": {
+        CARRIER_NAME: "Cycloon",
+        CARRIER_SENDERS: ["@cycloon.eu"],
+        CARRIER_REGISTERED_SUBJECTS: ["pakket aangemeld"],
+        CARRIER_TRANSIT_SUBJECTS: ["pakket onderweg"],
+        CARRIER_DELIVERING_SUBJECTS: ["vandaag bezorgd", "bezorger onderweg"],
+        CARRIER_DELIVERED_SUBJECTS: ["pakket bezorgd", "pakket afgeleverd"],
+        CARRIER_MISSED_SUBJECTS: ["niet kunnen bezorgen"],
+        CARRIER_TRACKING_PATTERNS: [r"\b(FKS[A-Z0-9]{5,25})\b"],
     },
 }

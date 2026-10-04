@@ -1,6 +1,14 @@
 # Vervoerders en aangepaste regels
 
-De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee.
+De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee. Sinds 0.8.0 zijn ook Dragonfly Shipping NL, Ampère, Vinted Go, Dynalogic, Mondial Relay, InPost en Cycloon opgenomen.
+
+## Nieuwe Nederlandse vervoerders in 0.8.0
+
+Dragonfly is gebaseerd op berichten uit een echte mailbox: afzender `notifications@nl.dragonflyinternational.com`, de onderwerpen voor ontvangen, bezorging vandaag en bezorgd, en een gedeelde `AM…`-trackingcode uit de link. Daardoor worden opeenvolgende statusmails voor dezelfde code samengevoegd. Mondial Relay is eveneens met echte mail bevestigd: `noreply@mondialrelay.fr`, onderwerp `Behandeling van uw pakket`.
+
+De overige nieuwe presets zijn voorlopig. Ze gebruiken een beperkt vervoerdersdomein en specifieke statuszinnen, maar er was nog geen echte notificatiemail om afzender en formuleringen volledig te controleren. Controleer na ontvangst van een eerste mail het afzenderadres en pas de regel zo nodig aan via de opties van de integratie. Cycloon herkent daarnaast FKS-trackingcodes; buiten de eigen fietssteden kan DHL de feitelijke bezorger zijn. Zonder gelijke trackingcode kan de tracker zulke berichten als aparte zendingen tonen.
+
+Vinted Go en Mondial Relay/InPost kunnen verschillende delen van dezelfde verzending afhandelen. Ook daar is automatische samenvoeging alleen betrouwbaar als dezelfde trackingcode in beide mails staat. De nieuwe presets bezoeken geen trackingwebsites en halen geen actuele status via een vervoerdersaccount op.
 
 ## Amazon en DHL
 
