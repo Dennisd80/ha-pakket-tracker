@@ -7,7 +7,7 @@ from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
 import pytest
-from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 
 from custom_components.pakket_tracker import (
     _matching_imap_push,
@@ -41,6 +41,7 @@ from custom_components.pakket_tracker.coordinator import (
     _threading_diagnostics,
 )
 from custom_components.pakket_tracker.sensor import (
+    PakketTrackerHealthSensor,
     PakketTrackerSensor,
     PakketTrackerSummarySensor,
 )
@@ -74,6 +75,10 @@ def test_count_sensors_enable_measurement_statistics():
 
     assert carrier_sensor.state_class is SensorStateClass.MEASUREMENT
     assert summary_sensor.state_class is SensorStateClass.MEASUREMENT
+
+
+def test_health_sensor_is_a_sensor_entity():
+    assert issubclass(PakketTrackerHealthSensor, SensorEntity)
 
 
 @pytest.mark.parametrize("value", ["", "24:00", "12:60", "12", "12:00:00:00"])
