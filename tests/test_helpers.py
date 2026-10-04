@@ -437,17 +437,20 @@ def test_new_dutch_carrier_presets_and_mailbox_examples():
     messages = [
         {
             "uid": "1", "senders": ["notifications@nl.dragonflyinternational.com"],
-            "subject": "we hebben je pakket ontvangen!", "body": "tracking-id=am123456789012345",
+            "subject": "we hebben je pakket ontvangen!",
+            "body": "tracking-id=am123456789012345",
             "message_id": "dragonfly-1@example.com", "timestamp": 1,
         },
         {
             "uid": "2", "senders": ["notifications@nl.dragonflyinternational.com"],
-            "subject": "we bezorgen je pakket vandaag", "body": "tracking-id=am123456789012345",
+            "subject": "we bezorgen je pakket vandaag",
+            "body": "tracking-id=am123456789012345",
             "message_id": "dragonfly-2@example.com", "timestamp": 2,
         },
         {
             "uid": "3", "senders": ["notifications@nl.dragonflyinternational.com"],
-            "subject": "we hebben je pakket bezorgd!", "body": "tracking-id=am123456789012345",
+            "subject": "we hebben je pakket bezorgd!",
+            "body": "tracking-id=am123456789012345",
             "message_id": "dragonfly-3@example.com", "timestamp": 3,
         },
         {
@@ -462,7 +465,7 @@ def test_new_dutch_carrier_presets_and_mailbox_examples():
     })
     assert result["dragonfly_nl"]["packages"] == 1
     assert result["dragonfly_nl"]["delivered"] == 1
-    assert result["dragonfly_nl"]["parcels"][0]["tracking_code"] == "AM123456789012345"
+    assert result["dragonfly_nl"]["parcels"][0]["barcode"] == "AM123456789012345"
     assert result["mondial_relay"]["registered"] == 1
 
 
@@ -472,7 +475,7 @@ def test_cycloon_fks_tracking_code():
         "subject": "je pakket is onderweg", "body": "track & trace: fks123456789",
         "message_id": "cycloon-1@example.com", "timestamp": 1,
     }], {"cycloon": PRESET_CARRIERS["cycloon"]})["cycloon"]
-    assert result["parcels"][0]["tracking_code"] == "FKS123456789"
+    assert result["parcels"][0]["barcode"] == "FKS123456789"
 
 
 def test_classification_prefers_latest_status_for_tracking_code():
