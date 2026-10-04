@@ -7,6 +7,13 @@ worden toegevoegd.
 
 Vereist Home Assistant 2025.1 of nieuwer.
 
+**Actuele release: [0.7.1](https://github.com/Dennisd80/ha-pakket-tracker/releases/tag/v0.7.1).**
+In 0.7.0 kwamen pakketgebeurtenissen, een korte statustijdlijn, een
+mailboxstatussensor, herkenning van trackinglinks in HTML-mail en een
+Lovelace-voorbeeld erbij. Versie 0.7.1 herstelt de statuswaarde van de nieuwe
+mailboxsensor. Zie de [releasehandleiding in de wiki](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Release-0.7.1)
+voor voorbeelden en bekende beperkingen.
+
 ## Mogelijkheden
 
 - Ingebouwde regels voor PostNL, DHL Parcel NL, DPD NL, GLS NL, Amazon.nl,
@@ -81,13 +88,33 @@ pakketvelden en `entry_id`; status- en tijdwijzigingen bevatten ook de oude en
 nieuwe waarden. De eerste scan legt alleen een uitgangspunt vast en meldt
 bestaande pakketten niet opnieuw. Herhaalde scans en een herstart geven geen
 dubbele gebeurtenis zolang de lokale opslag beschikbaar is.
-De pakketlijst bevat maximaal tien recente statusovergangen per pakket in
-`history`. Bestaande pakketten beginnen met een lege geschiedenis; oude mails
-worden hiervoor niet als gebeurtenissen nagespeeld.
+Voor pakketten zonder eigen brongeschiedenis bewaart Pakket Tracker maximaal
+tien recente statusovergangen in `history`. Bestaande pakketten beginnen met
+een lege geschiedenis; oude mails worden hiervoor niet als gebeurtenissen
+nagespeeld. Een directe vervoerderbron kan zijn eigen geschiedenis aanleveren.
+
+Voorbeeld: stuur één melding wanneer een pakket is bezorgd. Vervang de
+notify-actie door de service van je eigen telefoon; laat de trackingcode uit
+de melding om gegevens op het vergrendelscherm te beperken.
+
+```yaml
+alias: Pakket bezorgd melden
+triggers:
+  - trigger: event
+    event_type: pakket_tracker_parcel_delivered
+actions:
+  - action: notify.mobile_app_mijn_telefoon
+    data:
+      title: "📦 Pakket bezorgd"
+      message: "{{ trigger.event.data.carrier or 'Een vervoerder' }} heeft een pakket bezorgd."
+mode: queued
+```
 
 De nieuwe sensor **Pakket Tracker Mailbox status** toont `wachten`, `goed` of
 `fout`, plus de laatste geslaagde scan en scantijden. Kies voor de voorbeeldkaart
-in `examples/pakketoverzicht.yaml` de echte entity-ID's uit jouw installatie.
+in [examples/pakketoverzicht.yaml](examples/pakketoverzicht.yaml) de echte
+entity-ID's uit jouw installatie. Het voorbeeld wordt niet automatisch aan
+een bestaand dashboard toegevoegd.
 
 ### Snellere updates met IMAP Push
 
@@ -99,6 +126,22 @@ om de eigen mailboxscan te starten; er wordt geen mailinhoud uit het event
 opgeslagen. Zonder tweede IMAP-configuratie blijft het huidige scaninterval
 werken. Stel in de ingebouwde IMAP-integratie bij voorkeur een aparte pakketmap
 in, zodat andere mail niet op de eventbus verschijnt.
+Een nieuwe mail van een bekende afzender start hoogstens één extra scan per
+20 seconden; de volgende periodieke scan verwerkt de rest. Installeer de
+ingebouwde IMAP-integratie alleen als je deze snellere reactie wilt.
+
+### Bekende beperkingen in 0.7.1
+
+- De tijdlijn begint pas bij nieuwe statusovergangen na de upgrade; oude
+  mail wordt niet als gebeurtenis afgespeeld.
+- Een onbekende afzender, afwijkende trackingcode of ingekorte redirectlink
+  kan nog steeds een pakket missen. Meld dit met een geanonimiseerd voorbeeld.
+- Zonder betrouwbare gedeelde barcode blijven e-mail- en directe bronnen
+  bewust apart; zie de uitleg hieronder.
+- Voor de snellere scan moeten server, gebruikersnaam en map van beide
+  IMAP-integraties overeenkomen. Bij problemen blijft de periodieke scan
+  werken. De [probleemoplossing in de wiki](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Troubleshooting)
+  geeft controles per symptoom.
 
 ## Combineren met losse vervoerderintegraties
 
@@ -133,6 +176,27 @@ cross-source deduplicatie nodig hebt.
 Issues en pull requests zijn welkom. Nieuwe vervoerderregels moeten bij voorkeur
 worden onderbouwd met geanonimiseerde voorbeelden van afzender en relevante
 statusteksten. Zie [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Credits en inspiratie
+
+Pakket Tracker NL is een zelfstandig project. De volgende open-sourceprojecten
+hebben ideeën geleverd voor de architectuur en de 0.7-release; hun code is
+niet letterlijk overgenomen:
+
+- [Home Assistant parcel integrations](https://github.com/ha-parcel-integrations)
+  en [Parcel Aggregator](https://github.com/ha-parcel-integrations/ha-parcel-aggregator):
+  gedeelde pakketstatussen, gebeurteniscontract en optionele samenvoeging met
+  directe vervoerderbronnen.
+- [Mail and Packages](https://github.com/brandon-claps/home-assistant-mail-and-packages):
+  ideeën voor mailherkenning en pakketmeldingen.
+- [Amazon Package Tracker](https://github.com/Huskynarr/hacs-amazon-tracker):
+  snelle updates na nieuwe IMAP-mail. Wij gebruiken daarvoor optioneel
+  Home Assistants ingebouwde IMAP-integratie als signaal.
+- [PaketHub](https://github.com/eifeldj/pakethub):
+  zichtbare diagnose, een pakketgeschiedenis en een compact pakketoverzicht.
+
+Dank aan de makers en bijdragers van deze projecten. Pakket Tracker NL is niet
+aan hen of aan de vervoerders verbonden.
 
 ## Licentie
 
