@@ -7,7 +7,11 @@ worden gegroepeerd onder één device in de HA-UI.
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import RestoreSensor, SensorStateClass
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -272,7 +276,7 @@ class PakketTrackerSummarySensor(CoordinatorEntity, RestoreSensor):
         }
 
 
-class PakketTrackerHealthSensor(CoordinatorEntity):
+class PakketTrackerHealthSensor(CoordinatorEntity, SensorEntity):
     """Laat de huidige scanstatus zonder mailinhoud zien."""
 
     _attr_icon = "mdi:email-check-outline"
