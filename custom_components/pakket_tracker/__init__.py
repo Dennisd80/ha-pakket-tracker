@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from copy import deepcopy
+from email.utils import getaddresses
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall
@@ -22,7 +24,10 @@ from .const import (
     CONF_CARRIERS,
     CONF_CONFIRMATION_ENABLED,
     CONF_CONFIRMATION_TIME,
+    CONF_FOLDER,
+    CONF_IMAP_SERVER,
     CONF_PRESET_VERSION,
+    CONF_USERNAME,
     DEFAULT_CONFIRMATION_ENABLED,
     DEFAULT_CONFIRMATION_TIME,
     DOMAIN,
@@ -31,7 +36,7 @@ from .const import (
     SERVICE_CONFIRM_RECEIVED,
     SERVICE_KEEP_PARCELS,
 )
-from .coordinator import PakketTrackerCoordinator
+from .coordinator import PakketTrackerCoordinator, _sender_matches
 
 PLATFORMS: list[str] = ["sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -89,6 +94,27 @@ def _parse_confirmation_time(value: str) -> tuple[int, int, int]:
     ):
         raise ValueError("Ongeldige bevestigingstijd")
     return parts[0], parts[1], parts[2]
+
+
+def _matching_imap_push(data: dict, entry: ConfigEntry) -> bool:
+    """Accepteer alleen nieuwe mail uit dezelfde mailbox en bekende afzenders."""
+    if data.get("initial") is not True:
+        return False
+    for field, expected in (
+        ("server", entry.data.get(CONF_IMAP_SERVER)),
+        ("username", entry.data.get(CONF_USERNAME)),
+        ("folder", entry.data.get(CONF_FOLDER, "INBOX")),
+    ):
+        if str(data.get(field, "")).casefold() != str(expected or "").casefold():
+            return False
+    senders = [
+        address.casefold()
+        for _, address in getaddresses([str(data.get("sender") or "")])
+    ]
+    return any(
+        _sender_matches(rule.get(CARRIER_SENDERS, []), senders)
+        for rule in entry.options.get(CONF_CARRIERS, {}).values()
+    )
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -164,6 +190,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen("mobile_app_notification_action", _notification_action)
     )
+
+    # De ingebouwde IMAP-integratie kan IDLE gebruiken. Een passend event
+    # versnelt de scan; de normale periodieke scan blijft het herstelpad.
+    last_push_scan = 0.0
+
+    async def _imap_push(event: Event) -> None:
+        nonlocal last_push_scan
+        if not _matching_imap_push(event.data, entry):
+            return
+        now = time.monotonic()
+        if now - last_push_scan < 20:
+            return
+        last_push_scan = now
+        await coordinator.async_request_refresh()
+
+    entry.async_on_unload(hass.bus.async_listen("imap_content", _imap_push))
 
     # Een trage of onbereikbare mailbox mag de startup-fase niet blokkeren.
     entry.async_create_background_task(

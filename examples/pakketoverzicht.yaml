@@ -1,0 +1,40 @@
+# Voorbeeldweergave. Kies eerst de entity_id van de centrale sensor
+# "Pakket Tracker Totaal open" en vervang sensor.VERVANG_MIJ.
+# Vervang ook sensor.VERVANG_MAILBOX_STATUS door de nieuwe mailboxsensor.
+title: Pakketten
+path: pakketten
+type: sections
+sections:
+  - type: grid
+    column_span: 4
+    cards:
+      - type: vertical-stack
+        grid_options:
+          columns: full
+        cards:
+          - type: entities
+          # Fallback: standaardkaart zonder extra HACS-afhankelijkheid.
+            title: Pakket Tracker
+            entities:
+              - entity: sensor.VERVANG_MIJ
+              - entity: sensor.VERVANG_MAILBOX_STATUS
+          - type: markdown
+          # Fallback: pakketlijst en tijdlijn hebben een sjabloon nodig.
+            title: Open pakketten
+            content: |
+              {% set items = state_attr('sensor.VERVANG_MIJ', 'parcels') or [] %}
+              {% if not items %}
+              Geen open pakketten.
+              {% else %}
+              {% for parcel in items %}
+              **{{ parcel.carrier or 'Onbekend' }}** · {{ parcel.status | replace('_', ' ') }}
+              {% if parcel.planned_from %} · gepland {{ as_local(as_datetime(parcel.planned_from)).strftime('%d-%m %H:%M') }}{% endif %}
+              {% if parcel.source %} · bron {{ parcel.source }}{% endif %}
+              {% set link = parcel.url or parcel.tracking_url %}
+              {% if link and link.startswith('https://') %} · [Volgen]({{ link | replace(')', '%29') }}){% endif %}
+              {% for step in (parcel.history or [])[-3:] %}
+              - {{ as_local(as_datetime(step.timestamp)).strftime('%d-%m %H:%M') }}: {{ step.status | replace('_', ' ') }}
+              {% endfor %}
+
+              {% endfor %}
+              {% endif %}

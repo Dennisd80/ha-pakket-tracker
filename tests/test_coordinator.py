@@ -56,6 +56,39 @@ class _FakeImap:
         return "OK", []
 
 
+@pytest.mark.asyncio
+async def test_parcel_events_have_restart_safe_baseline(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = PakketTrackerCoordinator(hass, entry)
+    events = []
+    for name in (
+        "pakket_tracker_parcel_registered",
+        "pakket_tracker_parcel_delivered",
+    ):
+        hass.bus.async_listen(name, lambda event: events.append(event))
+
+    async def save(_cache):
+        return None
+
+    monkeypatch.setattr(coordinator._store, "async_save", save)
+    parcel = {"id": "email:one", "barcode": "3S123", "status": "in_transit"}
+    await coordinator._publish_parcel_changes([parcel])
+    assert events == []
+
+    await coordinator._publish_parcel_changes([parcel])
+    assert events == []
+
+    delivered = {**parcel, "id": "direct:one", "status": "delivered"}
+    await coordinator._publish_parcel_changes([delivered])
+    await hass.async_block_till_done()
+    assert [event.event_type for event in events] == ["pakket_tracker_parcel_delivered"]
+    assert delivered["history"][-1]["status"] == "delivered"
+    assert len(coordinator._cache["parcel_history"]["barcode:3S123"]) == 1
+    await coordinator._publish_parcel_changes([delivered])
+    await hass.async_block_till_done()
+    assert len(events) == 1
+
+
 def test_fetch_recent_emails_uses_one_batch_fetch(monkeypatch):
     fake = _FakeImap()
     monkeypatch.setattr(
@@ -72,11 +105,15 @@ def test_fetch_recent_emails_uses_one_batch_fetch(monkeypatch):
         "scan_window_days": 2,
     }
 
-    messages, _cache, fetched = _fetch_recent_emails(data, {})
+    snapshot = {"barcode:3S123": {"status": "in_transit"}}
+    messages, cache, fetched = _fetch_recent_emails(
+        data, {"parcel_event_snapshot": snapshot, "parcel_history": {}}
+    )
 
     assert fetched == 2
     assert len(messages) == 2
     assert [call[0] for call in fake.fetch_calls] == ["1,2"]
+    assert cache["parcel_event_snapshot"] == snapshot
 
 
 @pytest.mark.asyncio
@@ -119,6 +156,7 @@ async def test_confirm_received_only_records_delivered_once(hass, monkeypatch):
             ]
         }
     }
+
     async def _save(_cache):
         return None
 
