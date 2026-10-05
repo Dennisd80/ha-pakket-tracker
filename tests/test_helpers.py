@@ -478,6 +478,19 @@ def test_cycloon_fks_tracking_code():
     assert result["parcels"][0]["barcode"] == "FKS123456789"
 
 
+def test_postnl_new_package_mail_is_registered():
+    result = _classify_messages([{
+        "uid": "1",
+        "senders": ["notificatie@edm.postnl.nl"],
+        "subject": "nieuw pakket van winkel",
+        "body": "barcode 3SABCDEFGHIJKL",
+        "message_id": "new-postnl@example.com",
+        "timestamp": 1,
+    }], {"postnl": PRESET_CARRIERS["postnl"]})["postnl"]
+    assert result["registered"] == 1
+    assert result["parcels"][0]["barcode"] == "3SABCDEFGHIJKL"
+
+
 def test_classification_prefers_latest_status_for_tracking_code():
     carriers = {
         "voorbeeld": {

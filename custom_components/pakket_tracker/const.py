@@ -47,7 +47,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
-PRESET_VERSION = 6
+PRESET_VERSION = 7
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -123,8 +123,8 @@ PRESET_CARRIERS: dict[str, dict] = {
             "info@postnl.nl",
             "noreply@mypostnl.nl",
         ],
-        CARRIER_REGISTERED_SUBJECTS: [],
-        CARRIER_TRANSIT_SUBJECTS: ["je pakket is onderweg"],
+        CARRIER_REGISTERED_SUBJECTS: ["nieuw pakket"],
+        CARRIER_TRANSIT_SUBJECTS: ["je pakket is onderweg", "onderweg met je pakket"],
         CARRIER_DELIVERING_SUBJECTS: [
             "bezorging staat gepland",
             "wordt bezorgd",

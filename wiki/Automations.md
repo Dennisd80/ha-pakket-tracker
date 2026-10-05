@@ -6,6 +6,11 @@ een persoonlijke melding dan een teller die van 0 naar 1 gaat: de gebeurtenis
 bevat de vervoerder en wordt per statusovergang verstuurd. De eerste scan na
 de upgrade meldt bestaande pakketten niet opnieuw.
 
+De dagelijkse ontvangstbevestiging is iets anders dan een melding zodra een
+vervoerder een pakket aanmeldt. Maak daarvoor de automatisering hieronder.
+Een mail met alleen de status `registered` of `in_transit` verhoogt de teller
+voor **vandaag onderweg** nog niet.
+
 ## Melding bij een nieuw pakket
 
 ```yaml

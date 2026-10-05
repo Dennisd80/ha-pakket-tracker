@@ -1,5 +1,12 @@
 # Vervoerders en aangepaste regels
 
+Sinds 0.8.2 herkent PostNL ook mails met `Nieuw pakket …` als een aangemelde
+zending en `Onderweg met je pakket` als onderweg. De afzender en barcode
+moeten nog steeds bij de PostNL-regel passen. Voor een pushbericht bij de
+eerste herkenning is de automatisering op
+`pakket_tracker_parcel_registered` uit [Voorbeeldautomatiseringen](Automations)
+nodig; de integratie verstuurt niet voor iedere nieuwe mail zelf een push.
+
 De presets bevatten onder andere PostNL, DHL Parcel NL, DPD, Amazon, bol.com, AliExpress, USPS, UPS, FedEx, Trunkrs en Budbee. Sinds 0.8.1 zijn ook Dragonfly Shipping NL, Ampère, Vinted Go, Dynalogic, Mondial Relay, InPost en Cycloon opgenomen.
 
 ## Nieuwe Nederlandse vervoerders in 0.8.1
