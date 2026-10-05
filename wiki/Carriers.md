@@ -19,6 +19,14 @@ Vinted Go en Mondial Relay/InPost kunnen verschillende delen van dezelfde verzen
 
 ## Amazon en DHL
 
+Sinds 0.8.3 herkent de Amazon-preset ook de Engelstalige onderwerpen
+`Dispatched:`, `Out for delivery:` en `Delivered:`. `Ordered:` blijft buiten
+de pakketstatus: een bestelling is nog geen verzending. Zonder trackingcode
+gebruikt de tracker de mailthread of het bericht als pakketidentiteit. Amazon
+kan meerdere verzendingen onder één bestelnummer plaatsen; daarom wordt een
+bestelnummer niet als trackingcode gebruikt. Statusmails in verschillende
+threads kunnen dan als aparte pakketten verschijnen.
+
 Amazon verstuurt soms zowel een eigen statusmail als een mail van de
 daadwerkelijke bezorger. Bij een exact gelijke DHL-trackingcode (onder andere
 `JJD…` en `JVGL…`) behandelt Pakket Tracker dit als één zending. De DHL-status

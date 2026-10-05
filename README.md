@@ -7,7 +7,7 @@ worden toegevoegd.
 
 Vereist Home Assistant 2025.1 of nieuwer.
 
-**Actuele release: [0.8.2](https://github.com/Dennisd80/ha-pakket-tracker/releases/tag/v0.8.2).** PostNL-mails met `Nieuw pakket` worden nu herkend. Voor een pushbericht bij aanmelding is de [automatisering voor nieuwe pakketgebeurtenissen](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Automations) nodig. Versie 0.8.1 voegde zeven Nederlandse vervoerderpresets toe; zie de [vervoerderspagina](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Carriers) voor de dekking en beperkingen.
+**Actuele release: [0.8.3](https://github.com/Dennisd80/ha-pakket-tracker/releases/tag/v0.8.3).** Engelse Amazon-verzendmails met `Dispatched:`, `Out for delivery:` en `Delivered:` worden nu herkend. Voor een pushbericht bij een nieuw pakket is de [automatisering voor nieuwe pakketgebeurtenissen](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Automations) nodig. De [vervoerderspagina](https://github.com/Dennisd80/ha-pakket-tracker/wiki/Carriers) beschrijft de dekking en beperkingen.
 In 0.7.0 kwamen pakketgebeurtenissen, een korte statustijdlijn, een
 mailboxstatussensor, herkenning van trackinglinks in HTML-mail en een
 Lovelace-voorbeeld erbij. Versie 0.7.1 herstelt de statuswaarde van de nieuwe

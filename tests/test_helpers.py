@@ -411,6 +411,54 @@ def test_amazon_tomorrow_delivery_has_planned_local_date():
     )
 
 
+@pytest.mark.parametrize(
+    ("subject", "status"),
+    [
+        ("Dispatched: ‘elektrisch kastslot...’", "transit"),
+        ("Out for delivery: ‘aardingskabel...’", "delivering"),
+        ("Delivered: ‘aardingskabel...’", "delivered"),
+    ],
+)
+def test_amazon_english_shipping_statuses_without_tracking_code(subject, status):
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["verzending-volgen@amazon.nl"],
+                "subject": subject.casefold(),
+                "body": "Your order is on its way.",
+                "message_id": "amazon-shipment@example.com",
+                "thread_id": "amazon-shipment-thread",
+                "timestamp": 1.0,
+            }
+        ],
+        {"amazon_nl": PRESET_CARRIERS["amazon_nl"]},
+    )["amazon_nl"]
+
+    assert result["packages"] == 1
+    assert result[status] == 1
+    assert result["parcels"][0]["barcode"] is None
+
+
+def test_amazon_order_confirmation_is_not_a_shipment():
+    result = _classify_messages(
+        [
+            {
+                "uid": "1",
+                "senders": ["verzending-volgen@amazon.nl"],
+                "subject": "ordered: example item",
+                "body": "Your order is confirmed.",
+                "message_id": "amazon-order@example.com",
+                "thread_id": "amazon-order-thread",
+                "timestamp": 1.0,
+            }
+        ],
+        {"amazon_nl": PRESET_CARRIERS["amazon_nl"]},
+    )["amazon_nl"]
+
+    assert result["packages"] == 0
+
+
 def test_preset_upgrade_is_one_time_and_preserves_custom_values():
     postnl = deepcopy(PRESET_CARRIERS["postnl"])
     postnl[CARRIER_NAME] = "Mijn PostNL"

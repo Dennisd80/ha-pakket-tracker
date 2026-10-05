@@ -1,7 +1,7 @@
 """Constanten voor Pakket Tracker NL."""
 
 DOMAIN = "pakket_tracker"
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 
 # Config entry data (IMAP-account)
 CONF_IMAP_SERVER = "imap_server"
@@ -47,7 +47,7 @@ MIN_IMAP_TIMEOUT = 10
 MAX_IMAP_TIMEOUT = 120
 MIN_SCAN_WINDOW_DAYS = 1
 MAX_SCAN_WINDOW_DAYS = 14
-PRESET_VERSION = 7
+PRESET_VERSION = 8
 
 # Persistente cache. De sleutel is entry-specifiek; UIDVALIDITY voorkomt dat
 # oude UID's na een mailbox-reset aan de verkeerde mail worden gekoppeld.
@@ -101,9 +101,9 @@ PRESET_CARRIERS: dict[str, dict] = {
         CARRIER_NAME: "Amazon.nl",
         CARRIER_SENDERS: ["verzending-volgen@amazon.nl", "update-bestelling@amazon.nl"],
         CARRIER_REGISTERED_SUBJECTS: [],
-        CARRIER_TRANSIT_SUBJECTS: ["wordt morgen bezorgd"],
-        CARRIER_DELIVERING_SUBJECTS: ["onderweg voor bezorging"],
-        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd"],
+        CARRIER_TRANSIT_SUBJECTS: ["wordt morgen bezorgd", "dispatched:"],
+        CARRIER_DELIVERING_SUBJECTS: ["onderweg voor bezorging", "out for delivery:"],
+        CARRIER_DELIVERED_SUBJECTS: ["is bezorgd", "delivered:"],
         CARRIER_MISSED_SUBJECTS: [],
         # Amazon vermeldt bij uitbestede bezorging vaak de daadwerkelijke
         # DHL-code. Daarmee kunnen de Amazon- en DHL-statusmails veilig op
