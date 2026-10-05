@@ -5,6 +5,10 @@ installatie. Sinds 0.7 werkt een gebeurtenis per pakket meestal beter voor
 een persoonlijke melding dan een teller die van 0 naar 1 gaat: de gebeurtenis
 bevat de vervoerder en wordt per statusovergang verstuurd. De eerste scan na
 de upgrade meldt bestaande pakketten niet opnieuw.
+Sinds 0.8.4 bewaart de integratie nieuwe gebeurtenissen die tijdens het
+opstarten ontstaan totdat Home Assistant en de automatiseringen actief zijn.
+Gebeurtenissen die al door een oudere versie zijn verwerkt, worden niet alsnog
+opnieuw verstuurd.
 
 De dagelijkse ontvangstbevestiging is iets anders dan een melding zodra een
 vervoerder een pakket aanmeldt. Maak daarvoor de automatisering hieronder.

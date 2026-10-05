@@ -22,9 +22,11 @@ from typing import Any
 from urllib.parse import quote
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -411,6 +413,7 @@ def _fetch_recent_emails(
             "delivered_totals": cache.get("delivered_totals", {}),
             "parcel_event_snapshot": cache.get("parcel_event_snapshot"),
             "parcel_history": cache.get("parcel_history", {}),
+            "pending_parcel_events": cache.get("pending_parcel_events", []),
         }
         messages = [current_messages[uid] for uid in uids if uid in current_messages]
         return messages, new_cache, fetched
@@ -875,6 +878,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
         )
         self._cache: dict[str, Any] = {}
         self._cache_loaded = False
+        self._parcel_event_flush_scheduled = False
         self._prepared_rules = _prepare_carrier_rules(
             dict(entry.options.get(CONF_CARRIERS, {}))
         )
@@ -1015,6 +1019,7 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
                 self._cache.pop("parcel_event_snapshot", None)
                 self._cache.pop("parcel_history", None)
                 _LOGGER.warning("Pakketgebeurtenissen niet opgeslagen: %s", err)
+            await self._publish_or_defer_parcel_events()
             return
         changes: list[tuple[str, dict[str, Any]]] = []
         updated_history: dict[str, list[dict[str, Any]]] = {}
@@ -1068,18 +1073,62 @@ class PakketTrackerCoordinator(DataUpdateCoordinator):
             updated_history[parcel_id] = entries[-10:]
             if not parcel.get("history"):
                 parcel["history"] = entries[-10:]
-        if current != previous:
+        pending = self._cache.get("pending_parcel_events", [])
+        pending = list(pending) if isinstance(pending, list) else []
+        if current != previous or changes:
             self._cache["parcel_event_snapshot"] = current
             self._cache["parcel_history"] = updated_history
+            self._cache["pending_parcel_events"] = pending + [
+                {"event_type": event_type, "payload": payload}
+                for event_type, payload in changes
+            ]
             try:
                 await self._store.async_save(self._cache)
             except OSError as err:
                 self._cache["parcel_event_snapshot"] = previous
                 self._cache["parcel_history"] = history
+                self._cache["pending_parcel_events"] = pending
                 _LOGGER.warning("Pakketgebeurtenissen niet opgeslagen: %s", err)
                 return
-        for event_type, payload in changes:
-            self.hass.bus.async_fire(event_type, payload)
+        await self._publish_or_defer_parcel_events()
+
+    def _parcel_event_listeners_ready(self) -> bool:
+        """Automatiseringstriggers zijn pas na de HA-start actief."""
+        return self.hass.is_running
+
+    async def _publish_or_defer_parcel_events(self) -> None:
+        """Bewaar gebeurtenissen tot na de startup zodat geen push verdwijnt."""
+        if not self._cache.get("pending_parcel_events"):
+            return
+        if self._parcel_event_listeners_ready():
+            await self._flush_pending_parcel_events()
+            return
+        if self._parcel_event_flush_scheduled:
+            return
+        self._parcel_event_flush_scheduled = True
+
+        def _on_started(_event) -> None:
+            async_call_later(self.hass, 2, self._flush_pending_parcel_events)
+
+        self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
+
+    async def _flush_pending_parcel_events(self, _now=None) -> None:
+        """Stuur opgeslagen gebeurtenissen nadat alle triggers zijn geladen."""
+        self._parcel_event_flush_scheduled = False
+        if not self._parcel_event_listeners_ready():
+            await self._publish_or_defer_parcel_events()
+            return
+        pending = self._cache.get("pending_parcel_events", [])
+        if not isinstance(pending, list) or not pending:
+            return
+        for item in pending:
+            if isinstance(item, dict) and isinstance(item.get("payload"), dict):
+                self.hass.bus.async_fire(item["event_type"], item["payload"])
+        self._cache["pending_parcel_events"] = []
+        try:
+            await self._store.async_save(self._cache)
+        except OSError as err:
+            _LOGGER.warning("Verzonden pakketgebeurtenissen niet gemarkeerd: %s", err)
 
     async def async_get_threading_diagnostics(self) -> dict[str, dict[str, int]]:
         """Build expensive threading diagnostics only when requested."""

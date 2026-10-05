@@ -60,6 +60,7 @@ class _FakeImap:
 async def test_parcel_events_have_restart_safe_baseline(hass, monkeypatch):
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     coordinator = PakketTrackerCoordinator(hass, entry)
+    monkeypatch.setattr(coordinator, "_parcel_event_listeners_ready", lambda: True)
     events = []
     for name in (
         "pakket_tracker_parcel_registered",
@@ -87,6 +88,39 @@ async def test_parcel_events_have_restart_safe_baseline(hass, monkeypatch):
     await coordinator._publish_parcel_changes([delivered])
     await hass.async_block_till_done()
     assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_parcel_events_wait_for_automations_during_startup(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = PakketTrackerCoordinator(hass, entry)
+    ready = False
+    monkeypatch.setattr(
+        coordinator, "_parcel_event_listeners_ready", lambda: ready
+    )
+    saved = []
+
+    async def save(cache):
+        saved.append(list(cache.get("pending_parcel_events", [])))
+
+    monkeypatch.setattr(coordinator._store, "async_save", save)
+    events = []
+    hass.bus.async_listen("pakket_tracker_parcel_registered", events.append)
+
+    await coordinator._publish_parcel_changes([])
+    await coordinator._publish_parcel_changes(
+        [{"id": "email:amazon:one", "barcode": None, "status": "in_transit"}]
+    )
+    await hass.async_block_till_done()
+    assert events == []
+    assert len(saved[-1]) == 1
+
+    ready = True
+    await coordinator._flush_pending_parcel_events()
+    await hass.async_block_till_done()
+    assert len(events) == 1
+    assert events[0].data["status"] == "in_transit"
+    assert saved[-1] == []
 
 
 def test_fetch_recent_emails_uses_one_batch_fetch(monkeypatch):
